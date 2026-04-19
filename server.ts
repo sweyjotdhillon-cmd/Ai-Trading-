@@ -58,7 +58,7 @@ async function callModel(params: {
   let delay = 2500;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000);
+  const timeoutId = setTimeout(() => controller.abort(), 90000); // Increased to 90s for vision models
 
   while (retries >= 0) {
     try {
@@ -103,9 +103,16 @@ async function callModel(params: {
     return result.choices[0].message.content || "";
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        throw new Error("GitHub Models API Request Timed Out (60s).");
+        throw new Error("GitHub Models API Request Timed Out (90s).");
       }
-      throw err;
+      if (retries === 0) {
+        throw err;
+      }
+      console.warn(`Fetch error, retrying (${retries} left):`, err.message);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      retries--;
+      delay *= 1.5;
+      continue;
     }
   }
   return "";
@@ -144,8 +151,8 @@ async function startServer() {
   });
 
   app.use(cors());
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+  app.use(express.json({ limit: '100mb' }));
+  app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
   // API Routes
   app.get("/api/health", (req, res) => {
@@ -310,24 +317,28 @@ async function startServer() {
         }
       };
 
-      // 1. Vision Extractions
-      const visionExtractionRaw = await safeCall(VISION_EXTRACTION_PROMPT, optimizedBase64);
-      await new Promise(r => setTimeout(r, 600));
-      const mirrorExtractionRaw = await safeCall(VISION_EXTRACTION_PROMPT, flippedImage);
+      // 1. Vision Extractions (Run in parallel)
+      const [visionExtractionRaw, mirrorExtractionRaw] = await Promise.all([
+        safeCall(VISION_EXTRACTION_PROMPT, optimizedBase64),
+        safeCall(VISION_EXTRACTION_PROMPT, flippedImage)
+      ]);
 
       const chartData = visionExtractionRaw || "{}";
       const mirrorChartData = mirrorExtractionRaw || "{}";
 
-      if (!visionExtractionRaw) throw new Error("Chart perception failed. The image might be too complex or the API is unresponsive.");
+      if (!visionExtractionRaw) {
+        throw new Error("Vision extraction failed. Please try a clearer chart screenshot.");
+      }
 
       let extractedData: any = {};
       try {
         extractedData = JSON.parse(chartData);
-      } catch (e) {
-        console.error("Failed to parse chartData for math:", e);
+      } catch {
+        console.warn("Failed to parse chartData, using fallback defaults");
+        extractedData = { recentOHLC: [], keyLevels: [], currentPrice: 0 };
       }
 
-      // Calculate Math-Based Scores for Judges 3 and 4
+      // Calculate Math-Based Scores
       const ohlc = (extractedData.recentOHLC || []).map((c: any) => ({
         open: Number(c.open || 0),
         close: Number(c.close || 0),
@@ -335,9 +346,8 @@ async function startServer() {
         low: Number(c.low || 0)
       }));
 
-      // Use candleBodies if available, otherwise fallback to OHLC bodies
       let bodies = extractedData.candleBodies || ohlc.map((c: any) => ({ open: c.open, close: c.close }));
-      if (typeof bodies[0] === 'number') {
+      if (bodies.length > 0 && typeof bodies[0] === 'number') {
         bodies = bodies.map((b: number) => ({ open: 0, close: b }));
       }
 
@@ -349,7 +359,7 @@ JUDGE 3 (Z-Score) Calculated: ${j3Result.zScore.toFixed(2)} -> Points: ${j3Resul
 JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.points}/2.5
 `;
 
-      // 2. Run Bull, Bear, Skeptic and Mirror in serial to avoid 429 concurrency blocks from free endpoints
+      // 2. Run Bull, Bear, and Skeptic in parallel
       const dataContext = `\nEXTRACTED CHART DATA (JSON):\n${chartData}${techContext}${binaryContext}`;
       const mirrorDataContext = `\nEXTRACTED FLIPPED CHART DATA (JSON):\n${mirrorChartData}${techContext}${binaryContext}`;
 
@@ -358,21 +368,23 @@ JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.point
       const skepticPrompt = SKEPTIC_PROMPT + `\nGEOMETRIC ORACLES: ${geometricOracles}` + dataContext;
       const mirrorPrompt = MIRROR_PROMPT + mirrorDataContext + `\n\nAnalyze the data extracted from the horizontally flipped version of the chart. Output the signal as if interpreting a standard chart, returning ONLY valid JSON.`;
 
-      // Run sequentially with minimal fixed gap, letting callModel retry logic handle 429 overlap
-      const bullRaw = await safeCall(bullPrompt);
-      await new Promise(r => setTimeout(r, 500));
-      const bearRaw = await safeCall(bearPrompt);
-      await new Promise(r => setTimeout(r, 500));
-      const skepticRaw = await safeCall(skepticPrompt);
-      await new Promise(r => setTimeout(r, 500));
+      // Parallelize core arguments
+      const [bullRaw, bearRaw, skepticRaw] = await Promise.all([
+        safeCall(bullPrompt),
+        safeCall(bearPrompt),
+        safeCall(skepticPrompt)
+      ]);
+
+      // Mirror call (separate to keep concurrency manageable)
       const mirrorRaw = await safeCall(mirrorPrompt);
 
       const parseResponse = (raw: string | null) => {
         if (!raw) return { reasoning: "Model call failed.", flippedSignal: "UNKNOWN", skepticVerdict: "RISK UNKNOWN" };
         try {
-           return JSON.parse(raw);
+           // Basic clean up for accidental code block formatting
+           const cleanJson = raw.replace(/^[^{]*(\{.*\})[^}]*$/s, '$1');
+           return JSON.parse(cleanJson);
         } catch {
-           console.error("Failed to parse JSON response:", raw);
            return { reasoning: "Parsing failed.", flippedSignal: "UNKNOWN", skepticVerdict: "RISK UNKNOWN" };
         }
       };
@@ -382,8 +394,7 @@ JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.point
       const skeptic = parseResponse(skepticRaw);
       const mirror = parseResponse(mirrorRaw);
 
-      // 3. Run Judge
-      await new Promise(r => setTimeout(r, 800));
+      // 3. Final Arbitrator Call
       const judgePrompt = JUDGE_PROMPT
         .replace('{{STRUCTURAL_PRIORS}}', structuralPriors)
         .replace('{{TECHNIQUES}}', techContext)
@@ -435,7 +446,7 @@ JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.point
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   });
   
-  server.timeout = 120000;
+  server.timeout = 180000;
 }
 
 startServer().catch(err => {

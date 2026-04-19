@@ -327,19 +327,28 @@ export function LiveAnalysis() {
     });
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s Safety Timeout
+    const timeoutId = setTimeout(() => {
+      try {
+        controller.abort();
+      } catch (e) {
+        console.warn("Manual abort failed", e);
+      }
+    }, 180000); // Increased to 180s Safety Timeout
 
     try {
       const fetchWithRetry = async (url: string, options: any, retries: number = 2): Promise<Response> => {
+        if (options.signal?.aborted) {
+          throw new Error("Request aborted before retry");
+        }
         try {
           const res = await fetch(url, options);
-          if (!res.ok && retries > 0 && res.status >= 500) {
+          if (!res.ok && retries > 0 && (res.status >= 500 || res.status === 429)) {
             await new Promise(r => setTimeout(r, 2000));
             return fetchWithRetry(url, options, retries - 1);
           }
           return res;
-        } catch (err) {
-          if (retries > 0) {
+        } catch (err: any) {
+          if (retries > 0 && err.name !== 'AbortError' && !options.signal?.aborted) {
             await new Promise(r => setTimeout(r, 2000));
             return fetchWithRetry(url, options, retries - 1);
           }
@@ -441,7 +450,9 @@ export function LiveAnalysis() {
       clearTimeout(timeoutId);
       console.error("Critical Analysis Error:", error);
       let msg = error.message || "Unknown error";
-      if (error.name === 'AbortError') msg = "Analysis timed out (120s limit). Please check your internet or retry.";
+      if (error.name === 'AbortError' || msg.includes('aborted')) {
+        msg = "Analysis timed out (180s limit). The models are deep in thought. Please try again.";
+      }
       setAnalysisError(msg);
       setTradingPhase('IDLE');
       setLoading(false);
