@@ -1,0 +1,5 @@
+{
+  "name": "AI Trading Assistant",
+  "description": "An AI-powered binary options trading assistant",
+  "requestFramePermissions": ["camera"]
+}
