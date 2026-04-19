@@ -37,6 +37,38 @@ const JUDGE_TASKS = {
   system: ["Syncing live vision feed...", "Extracting OHLC data...", "Computing math oracles...", "Aligning market priors...", "Synthesizing full report..."]
 };
 
+// Utility to downscale images on the web before sending to server
+const downscaleImage = (dataUrl: string, maxDim: number = 600): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = (height / width) * maxDim;
+          width = maxDim;
+        } else {
+          width = (width / height) * maxDim;
+          height = maxDim;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = 'black'; // Fill background
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+      }
+      // Lower quality (0.6) and use JPEG to minimize payload size
+      resolve(canvas.toDataURL('image/jpeg', 0.6));
+    };
+    img.onerror = () => resolve(dataUrl); 
+    img.src = dataUrl;
+  });
+};
+
 export function LiveAnalysis() {
   const [stockName, setStockName] = useState('Bitcoin');
   const [graphTimeframe, setGraphTimeframe] = useState('5m');
@@ -276,12 +308,15 @@ export function LiveAnalysis() {
       return;
     }
 
-    const techCount = techniquesList.length;
     setLoading(true);
     setAnalysisError(null);
     setAnalysis(null);
     setTradingPhase('ANALYSING_DIRECTION');
-    setAnalysisStep(`SYNCHRONIZING ${techCount} TECHNIQUES...`);
+    setAnalysisStep(`SYNCHRONIZING ${techniquesList.length} TECHNIQUES...`);
+
+    // Optimize image for transmission (web canvas resize)
+    const optimizedImage = await downscaleImage(finalImageToAnalyze);
+    const base64Data = optimizedImage.split(',')[1];
     
     setJudgeLogs({
       judge1: { text: "Initializing Deep Scan...", status: 'active' },
@@ -295,12 +330,29 @@ export function LiveAnalysis() {
     const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s Safety Timeout
 
     try {
+      const fetchWithRetry = async (url: string, options: any, retries: number = 2): Promise<Response> => {
+        try {
+          const res = await fetch(url, options);
+          if (!res.ok && retries > 0 && res.status >= 500) {
+            await new Promise(r => setTimeout(r, 2000));
+            return fetchWithRetry(url, options, retries - 1);
+          }
+          return res;
+        } catch (err) {
+          if (retries > 0) {
+            await new Promise(r => setTimeout(r, 2000));
+            return fetchWithRetry(url, options, retries - 1);
+          }
+          throw err;
+        }
+      };
+
       // 1. START DATA FETCH
-      const apiCall = fetch('/api/debate', {
+      const apiCall = fetchWithRetry('/api/debate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          image: finalImageToAnalyze.split(',')[1],
+          image: base64Data,
           symbol: stockName,
           timeframe: graphTimeframe,
           investment: {
@@ -330,7 +382,7 @@ export function LiveAnalysis() {
         await new Promise(r => setTimeout(r, 2000));
       }
 
-      setAnalysisStep(`FINALIZING VERDICT (${techCount} TECHNIQUES AUDITED)`);
+      setAnalysisStep(`FINALIZING VERDICT (${techniquesList.length} TECHNIQUES AUDITED)`);
       setJudgeLogs({
         judge1: { text: JUDGE_TASKS.judge1[4], status: 'active' },
         judge2: { text: JUDGE_TASKS.judge2[4], status: 'active' },
@@ -360,7 +412,7 @@ export function LiveAnalysis() {
           system: { text: `${data.techUsedCount} Patterns Identified ✅`, status: 'done' }
         });
         
-        setAnalysisStep(`Analysis Complete: ${data.techUsedCount}/${techCount} Techniques Found`);
+        setAnalysisStep(`Analysis Complete: ${data.techUsedCount}/${techniquesList.length} Techniques Found`);
         const direction = data.judge.winner === 'BULL' ? 'UP' : (data.judge.winner === 'BEAR' ? 'DOWN' : 'NO_TRADE');
 
         setTradingDirection(direction);
@@ -395,8 +447,6 @@ export function LiveAnalysis() {
       setLoading(false);
     }
   };
-  };
-
 
 
   return (

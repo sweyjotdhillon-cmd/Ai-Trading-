@@ -101,6 +101,12 @@ async function callModel(params: {
 
     const result = await response.json();
     return result.choices[0].message.content || "";
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        throw new Error("GitHub Models API Request Timed Out (60s).");
+      }
+      throw err;
+    }
   }
   return "";
 }
@@ -127,6 +133,15 @@ Respond ONLY with a valid JSON object matching this structure exactly:
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // Add process-level error handling to prevent mysterious crashes
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  });
+
+  process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+  });
 
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
@@ -241,16 +256,21 @@ async function startServer() {
   });
 
   app.post("/api/debate", async (req, res) => {
-    const { image, timeframe, investment, structuralPriors, geometricOracles, githubToken, githubEndpoint, techniqueData, statsData } = req.body;
+    console.log(`[API] Received debate request at ${new Date().toISOString()}`);
+    const { image, symbol, timeframe, investment, structuralPriors, geometricOracles, githubToken, githubEndpoint, techniqueData, statsData } = req.body;
     
-    const selectedVisionModel = "Llama-3.2-90B-Vision-Instruct"; 
+    if (!image) {
+      console.error("[API] Missing image in request body");
+      return res.status(400).json({ error: "Missing image data" });
+    }
+
     const selectedReasoningModel = "Llama-3.2-90B-Vision-Instruct";
     
     const finalApiKey = githubToken || process.env.GITHUB_TOKEN;
     const finalEndpoint = githubEndpoint || process.env.GITHUB_API_BASE_URL;
 
     // session context
-    const binaryContext = `\nESSENTIAL BINARY CONTEXT:\nGraph Timeframe: ${timeframe}\nInvestment Duration: ${investment?.duration}\nInvestment Amount: $${investment?.amount}\n`;
+    const binaryContext = `\nESSENTIAL BINARY CONTEXT:\nAsset Symbol: ${symbol || "Unknown"}\nGraph Timeframe: ${timeframe}\nInvestment Duration: ${investment?.duration}\nInvestment Amount: $${investment?.amount}\n`;
     const techContext = techniqueData && Array.isArray(techniqueData) 
       ? `\nMANDATED TECHNIQUES TO USE:\n${techniqueData.map((t, i) => `${i + 1}. ${t}`).join('\n')}`
       : (techniqueData ? `\nMANDATED TECHNIQUES TO USE:\n${JSON.stringify(techniqueData, null, 2)}` : "None specific provided.");
@@ -263,7 +283,7 @@ async function startServer() {
       
       // Resize to a max dimension to speed up vision processing (most models prefer ~1024)
       if (jimpImage.width > 1200 || jimpImage.height > 1200) {
-        jimpImage.contain({ w: 1024, h: 1024 });
+        jimpImage.contain({ width: 1024, height: 1024 });
       }
 
       const compressedImage = await jimpImage.getBuffer("image/jpeg", { quality: 50 });
@@ -410,10 +430,12 @@ JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.point
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   });
+  
+  server.timeout = 120000;
 }
 
 startServer().catch(err => {
