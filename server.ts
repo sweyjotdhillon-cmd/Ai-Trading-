@@ -307,12 +307,12 @@ async function startServer() {
         console.log(`[API] Jimp processing: ${jimpImage.width}x${jimpImage.height}`);
         
         // Resize if too large
-        if (jimpImage.width > 800 || jimpImage.height > 800) {
-          jimpImage.contain({ width: 800, height: 800 });
+        if (jimpImage.width > 1024 || jimpImage.height > 1024) {
+          jimpImage.contain({ width: 1024, height: 1024 });
         }
 
         // Jimp v1: set quality directly in getBuffer options if possible, or use the v1 method if available
-        const compressedImage = await jimpImage.getBuffer("image/jpeg", { quality: 50 });
+        const compressedImage = await jimpImage.getBuffer("image/jpeg", { quality: 85 });
         optimizedBase64 = compressedImage.toString('base64');
         console.log(`[API] Image optimization complete`);
       } catch (jimpErr: any) {
@@ -480,7 +480,7 @@ BOUNDARY REVERSAL BIAS: ${boundaryResult.label} -> Bull: +${boundaryResult.bullP
       const skepticRaw = agentResults[2].status === 'fulfilled' ? agentResults[2].value : null;
 
       const parseResponse = (raw: string | null) => {
-        if (!raw) return { reasoning: "Model call failed.", flippedSignal: "UNKNOWN", skepticVerdict: "RISK UNKNOWN" };
+        if (!raw) return { reasoning: "Model call failed.", flippedSignal: "UNKNOWN", riskVerdict: "RISK UNKNOWN", riskProbability: 50 };
         try {
            // Advanced clean up: remove markdown then find the first { and last }
            const text = raw.replace(/```json|```/g, '').trim();
@@ -504,7 +504,8 @@ BOUNDARY REVERSAL BIAS: ${boundaryResult.label} -> Bull: +${boundaryResult.bullP
              winner: winner || "NO_TRADE", 
              tradeDetails: { signal: signal || "UNKNOWN" },
              flippedSignal: "UNKNOWN", 
-             skepticVerdict: "RISK UNKNOWN" 
+             riskVerdict: "RISK UNKNOWN",
+             riskProbability: 50
            };
         }
       };
@@ -519,7 +520,7 @@ BOUNDARY REVERSAL BIAS: ${boundaryResult.label} -> Bull: +${boundaryResult.bullP
         .replace('{{TECHNIQUES}}', techContext)
         .replace('{{STAT_SCORES}}', statScoresContext)
         .replace('{{GEOMETRIC_ORACLES}}', visionGeometricOracles) + 
-        `\n\nAGENT BULL ARGUMENT: ${bull.reasoning}\n\nAGENT BEAR ARGUMENT: ${bear.reasoning}\n\nSKEPTIC FAILURE ANALYSIS: ${skeptic.skepticVerdict} (${skeptic.failureProbability}%)\n` + 
+        `\n\nAGENT BULL ARGUMENT: ${bull.reasoning}\nBULL TECHNIQUES: ${bull.techniquesApplied?.join(', ') || 'None provided'}\n\nAGENT BEAR ARGUMENT: ${bear.reasoning}\nBEAR TECHNIQUES: ${bear.techniquesApplied?.join(', ') || 'None provided'}\n\nRISK ANALYST REPORT: ${skeptic.riskVerdict} (${skeptic.riskProbability}%)\n` + 
         dataContext + statsContext;
 
       const judgeRaw = await safeCall(judgePrompt);

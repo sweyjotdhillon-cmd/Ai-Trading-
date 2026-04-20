@@ -39,7 +39,7 @@ const JUDGE_TASKS = {
 };
 
 // Utility to downscale images on the web before sending to server
-const downscaleImage = (dataUrl: string, maxDim: number = 600): Promise<string> => {
+const downscaleImage = (dataUrl: string, maxDim: number = 900): Promise<string> => {
   return new Promise((resolve) => {
     const img = new window.Image();
     img.onload = () => {
@@ -62,8 +62,8 @@ const downscaleImage = (dataUrl: string, maxDim: number = 600): Promise<string> 
         ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
       }
-      // Lower quality (0.6) and use JPEG to minimize payload size
-      resolve(canvas.toDataURL('image/jpeg', 0.6));
+      // Higher quality (0.88) to preserve chart fidelity
+      resolve(canvas.toDataURL('image/jpeg', 0.88));
     };
     img.onerror = () => resolve(dataUrl); 
     img.src = dataUrl;
@@ -483,9 +483,9 @@ export function LiveAnalysis() {
       if (data && data.judge) {
         setLoading(false); // CLOSE LOADING IMMEDIATELY ON SUCCESS
         setJudgeLogs({
-          judge1: { text: `Bull: ${data.bull.reasoning.substring(0, 30)}...`, status: 'done' },
-          judge2: { text: `Bear: ${data.bear.reasoning.substring(0, 30)}...`, status: 'done' },
-          judge3: { text: `Risk: ${data.skeptic.skepticVerdict.substring(0, 30)}...`, status: 'done' },
+          judge1: { text: `Bull: ${(data.bull?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
+          judge2: { text: `Bear: ${(data.bear?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
+          judge3: { text: `Risk: ${(data.skeptic?.riskVerdict || data.skeptic?.skepticVerdict || "Analyzing...").substring(0, 30)}...`, status: 'done' },
           system: { text: `${data.techUsedCount} Patterns Identified ✅`, status: 'done' }
         });
         
@@ -809,7 +809,7 @@ export function LiveAnalysis() {
 
               <View style={[tw`bg-black/80 p-3 rounded-lg flex-row items-center justify-between border-l-4`, { borderColor: '#39FF14', borderLeftColor: '#39FF14' }]}>
                 <View style={tw`flex-1`}>
-                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#39FF14' }]}>Judge 3 (Skeptic Filter)</Text>
+                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#39FF14' }]}>Judge 3 (Risk Analyst Filter)</Text>
                   <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.judge3.text}</Text>
                 </View>
                 {judgeLogs.judge3.status === 'done' && <Check size={16} color="#39FF14" />}
