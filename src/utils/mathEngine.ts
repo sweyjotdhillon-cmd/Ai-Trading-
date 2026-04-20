@@ -9,9 +9,20 @@ export function calculateWassersteinSimilarity(source: number[], target: number[
   const n = source.length;
   const m = target.length;
   
+  // Normalize both series to [0, 1] to prevent cost matrix explosion and Sinkhorn underflow
+  const minS = Math.min(...source);
+  const maxS = Math.max(...source);
+  const rangeS = Math.max(maxS - minS, 1e-9);
+  const normSource = source.map(s => (s - minS) / rangeS);
+
+  const minT = Math.min(...target);
+  const maxT = Math.max(...target);
+  const rangeT = Math.max(maxT - minT, 1e-9);
+  const normTarget = target.map(t => (t - minT) / rangeT);
+
   // Cost matrix (Euclidean distance squared)
   const cost = Array.from({ length: n }, (_, i) => 
-    Array.from({ length: m }, (_, j) => Math.pow(source[i] - target[j], 2))
+    Array.from({ length: m }, (_, j) => Math.pow(normSource[i] - normTarget[j], 2))
   );
 
   // Uniform distributions
@@ -65,27 +76,49 @@ export function calculateRQA(series: number[], epsilon = 0.1) {
   }
   recurrenceRate /= (n * n);
 
-  // Determinism (DET): Percentage of recurrence points forming diagonal lines
+  // Determinism (DET): Percentage of recurrence points forming diagonal lines >= lmin
   let diagPoints = 0;
-  for (let i = 1; i < n - 1; i++) {
-    for (let j = 1; j < n - 1; j++) {
-      if (rp[i][j] === 1 && rp[i-1][j-1] === 1 && rp[i+1][j+1] === 1) {
-        diagPoints++;
-      }
+  const lmin = 2;
+  // Scan for diagonal lines 
+  // We only need to check upper triangle (excluding main diagonal) since RP is symmetric
+  for (let d = 1; d < n; d++) {
+    let currentRun = 0;
+    for (let i = 0; i < n - d; i++) {
+        let j = i + d;
+        if (rp[i][j] === 1) {
+            currentRun++;
+        } else {
+            if (currentRun >= lmin) diagPoints += currentRun;
+            currentRun = 0;
+        }
     }
+    if (currentRun >= lmin) diagPoints += currentRun;
   }
-  const determinism = diagPoints / (recurrenceRate * n * n || 1);
+  // Multiply by 2 for symmetric lower triangle
+  diagPoints *= 2;
+  // Note: We don't count main diagonal (length N) for determinism usually, but if we do, add N. 
+  // Standard RQA omits the main line of identity (LOI).
 
-  // Laminarity (LAM): Percentage of recurrence points forming vertical lines
+  const totalRecurrenceExcludingLOI = (recurrenceRate * n * n) - n;
+  const determinism = totalRecurrenceExcludingLOI > 0 ? diagPoints / totalRecurrenceExcludingLOI : 0;
+
+  // Laminarity (LAM): Percentage of recurrence points forming vertical lines >= vmin
   let vertPoints = 0;
-  for (let i = 1; i < n - 1; i++) {
-    for (let j = 0; j < n; j++) {
-      if (rp[i][j] === 1 && rp[i-1][j] === 1 && rp[i+1][j] === 1) {
-        vertPoints++;
+  const vmin = 2;
+  for (let j = 0; j < n; j++) {
+      let currentRun = 0;
+      for (let i = 0; i < n; i++) {
+          // exclude main diagonal for laminarity too
+          if (i !== j && rp[i][j] === 1) {
+              currentRun++;
+          } else {
+              if (currentRun >= vmin) vertPoints += currentRun;
+              currentRun = 0;
+          }
       }
-    }
+      if (currentRun >= vmin) vertPoints += currentRun;
   }
-  const laminarity = vertPoints / (recurrenceRate * n * n || 1);
+  const laminarity = totalRecurrenceExcludingLOI > 0 ? vertPoints / totalRecurrenceExcludingLOI : 0;
 
   return { recurrenceRate, determinism, laminarity };
 }
@@ -127,9 +160,13 @@ export function calculateHamiltonianFlow(price: number, momentum: number, steps 
 
   for (let i = 0; i < steps; i++) {
     // Leapfrog integrator (Symplectic)
-    p = p - k * q * (dt / 2);
+    // Normalize spring constant relative to price scale to avoid explosions
+    const priceScale = Math.max(Math.abs(price), 1e-9);
+    const normalizedK = k / priceScale;
+
+    p = p - normalizedK * q * (dt / 2);
     q = q + p * dt;
-    p = p - k * q * (dt / 2);
+    p = p - normalizedK * q * (dt / 2);
     paths.push(q);
   }
 
@@ -152,7 +189,11 @@ export function calculateZScoreSignificance(candles: { open: number, close: numb
   const currentBody = Math.abs(candles[candles.length - 1].close - candles[candles.length - 1].open);
   
   const mean = bodies.reduce((a, b) => a + b, 0) / bodies.length;
-  const stdDev = Math.sqrt(bodies.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / bodies.length);
+  // Use Bessel's correction for unbiased sample standard deviation
+  const variance = bodies.length > 1 
+    ? bodies.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (bodies.length - 1)
+    : 0;
+  const stdDev = Math.sqrt(variance);
   
   const zScore = stdDev === 0 ? 0 : (currentBody - mean) / stdDev;
   
@@ -350,53 +391,56 @@ export function calculateCEF(priceSeries: number[], liquidityMap: Record<number,
  * Measures causal information flow from source to target.
  */
 export function calculateTransferEntropy(source: number[], target: number[], k = 3, l = 1) {
-  // Simplified implementation using symbolic dynamics (direction of change)
-  // as full KSG estimator is computationally heavy for JS without specialized libs.
-  const n = target.length - Math.max(k, l);
+  // Simplified discrete TE implementation using sliding windows to capture k lags
+  const lag = Math.max(k, l);
+  const n = target.length - lag;
   if (n <= 0) return 0;
 
   const getSymbol = (series: number[], i: number) => series[i] > series[i - 1] ? 1 : 0;
 
-  // This is a simplified discrete TE implementation
-  // T(S->T) = H(T_next | T_past) - H(T_next | T_past, S_past)
-  // For brevity and performance in this environment, we use a 1-step lag symbolic approach
-  
   const jointMap = new Map<string, number>();
   const targetPastMap = new Map<string, number>();
   const fullMap = new Map<string, number>();
+  const pastSourceMap = new Map<string, number>();
 
-  for (let i = Math.max(k, l); i < target.length; i++) {
-    const tNext = getSymbol(target, i);
-    const tPast = getSymbol(target, i - 1);
-    const sPast = getSymbol(source, i - 1);
+  for (let i = lag; i < target.length; i++) {
+    const tNext = getSymbol(target, i).toString();
+    
+    // Capture k past states of target
+    let tPast = '';
+    for (let j = 1; j <= k; j++) {
+      tPast += getSymbol(target, i - j) + ',';
+    }
+    
+    // Capture past state of source
+    const sPast = getSymbol(source, i - 1).toString();
 
     const jointKey = `${tNext}|${tPast}`;
     const targetPastKey = `${tPast}`;
     const fullKey = `${tNext}|${tPast}|${sPast}`;
+    const pastSourceKey = `${tPast}|${sPast}`;
 
     jointMap.set(jointKey, (jointMap.get(jointKey) || 0) + 1);
     targetPastMap.set(targetPastKey, (targetPastMap.get(targetPastKey) || 0) + 1);
     fullMap.set(fullKey, (fullMap.get(fullKey) || 0) + 1);
+    pastSourceMap.set(pastSourceKey, (pastSourceMap.get(pastSourceKey) || 0) + 1);
   }
 
-  // Calculate Shannon Entropies and TE
-  // T = sum P(next, past, source) * log ( P(next | past, source) / P(next | past) )
   let te = 0;
-  const total = target.length - Math.max(k, l);
+  const total = target.length - lag;
 
   for (const [fullKey, fullCount] of fullMap.entries()) {
-    const [tNext, tPast, sPast] = fullKey.split('|');
+    // split with limit to not split the commas inside tPast
+    const parts = fullKey.split('|');
+    const tNext = parts[0];
+    const tPast = parts[1];
+    const sPast = parts[2];
+    
     const pFull = fullCount / total;
     
     const jointCount = jointMap.get(`${tNext}|${tPast}`) || 0;
     const targetPastCount = targetPastMap.get(`${tPast}`) || 0;
-    
-    // P(next | past, source) = count(next, past, source) / count(past, source)
-    // We need count(past, source)
-    let pastSourceCount = 0;
-    for (const [fk, fc] of fullMap.entries()) {
-      if (fk.endsWith(`|${tPast}|${sPast}`)) pastSourceCount += fc;
-    }
+    const pastSourceCount = pastSourceMap.get(`${tPast}|${sPast}`) || 0;
 
     const pNextCondFull = fullCount / (pastSourceCount || 1);
     const pNextCondTarget = jointCount / (targetPastCount || 1);
@@ -432,10 +476,14 @@ export class OptimalStoppingEntry {
 
       const winRate = ss.mean(group.map(e => e.outcome === 'WIN' ? 1 : 0));
       const avgSlippage = ss.mean(group.map(e => Math.abs(e.entryPrice - e.signalPrice)));
+      // Normalize slippage against the entry price to be a dimensionless ratio, like winRate
+      const avgPrice = ss.mean(group.map(e => e.entryPrice));
+      const normalizedSlippage = avgPrice > 0 ? avgSlippage / avgPrice : 0;
+      
       this.delayMetrics[d] = {
         winRate,
         avgSlippage,
-        ev: winRate * 0.85 - avgSlippage
+        ev: winRate * 0.85 - normalizedSlippage
       };
     });
   }

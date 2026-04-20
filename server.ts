@@ -57,10 +57,9 @@ async function callModel(params: {
   let retries = 3; // Reduced for faster failure
   let delay = 1500; // Shorter initial delay
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 80000); // 80s for model call
-
   while (retries >= 0) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 80000); // 80s for model call
     try {
       const response = await fetch(
         endpoint,
@@ -74,7 +73,6 @@ async function callModel(params: {
           signal: controller.signal
         }
       );
-      clearTimeout(timeoutId);
 
     if (response.status === 429) {
       if (retries === 0) {
@@ -103,7 +101,7 @@ async function callModel(params: {
     return result.choices[0].message.content || "";
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        throw new Error("GitHub Models API Request Timed Out (90s).");
+        throw new Error("GitHub Models API Request Timed Out (80s).");
       }
       if (retries === 0) {
         throw err;
@@ -113,6 +111,8 @@ async function callModel(params: {
       retries--;
       delay *= 1.5;
       continue;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
   return "";
@@ -150,9 +150,15 @@ async function startServer() {
     console.error('Uncaught Exception:', err);
   });
 
-  app.use(cors());
-  app.use(express.json({ limit: '100mb' }));
-  app.use(express.urlencoded({ limit: '100mb', extended: true }));
+  app.use(cors({ origin: '*' })); // Keep wildcard cors for now to support AI studio iframes, but reduce limits
+  
+  // Apply a standard 2mb limit globally to prevent broad DoS
+  app.use(express.json({ limit: '2mb' }));
+  app.use(express.urlencoded({ limit: '2mb', extended: true }));
+
+  // Exception limit for high-bandwidth endpoints like image analysis
+  app.use('/api/debate', express.json({ limit: '50mb' }));
+  app.use('/api/debate', express.urlencoded({ limit: '50mb', extended: true }));
 
   // API Routes
   app.get("/api/health", (req, res) => {
@@ -199,9 +205,14 @@ async function startServer() {
         judge4 = calculatePLR(priceHistory[priceHistory.length-1], levels, candles);
 
         // New Gates
-        const volRegime = calculateVolatilityRegime(priceHistory.map((p: number, i: number) => ({
-          high: p, low: p, close: p, prevClose: priceHistory[i-1] || p
-        })));
+        const volRegime = calculateVolatilityRegime(priceHistory.map((p: number, i: number) => {
+          const prev = priceHistory[i-1] || p;
+          const next = priceHistory[i+1] || p;
+          // Simulate some range since we only have closes
+          const high = Math.max(p, prev, next) * 1.001; 
+          const low = Math.min(p, prev, next) * 0.999;
+          return { high, low, close: p, prevClose: prev };
+        }));
         const predictability = calculatePredictability(priceHistory);
         const robustness = calculateRobustness(priceHistory);
 
@@ -273,11 +284,27 @@ async function startServer() {
 
     const selectedReasoningModel = "Llama-3.2-90B-Vision-Instruct";
     
+    // SSRF Protection: Validate finalEndpoint
     const finalApiKey = githubToken || process.env.GITHUB_TOKEN;
-    const finalEndpoint = githubEndpoint || process.env.GITHUB_API_BASE_URL;
+    let finalEndpoint = githubEndpoint || process.env.GITHUB_API_BASE_URL || "https://models.inference.ai.azure.com/chat/completions";
+    
+    try {
+        const url = new URL(finalEndpoint);
+        if (url.hostname !== 'models.inference.ai.azure.com' && url.hostname !== 'api.github.com') {
+            return res.status(400).json({ error: "Invalid API endpoint domain" });
+        }
+    } catch {
+        return res.status(400).json({ error: "Invalid API endpoint URL format" });
+    }
+
+    // Prompt Injection Protection: Sanitize user bounds
+    const safeSymbol = (symbol || "Unknown").replace(/[\n\r]/g, ' ');
+    const safeTimeframe = (timeframe || "").replace(/[\n\r]/g, ' ');
+    const safeDuration = (investment?.duration || "").replace(/[\n\r]/g, ' ');
+    const safeAmount = (investment?.amount || "").replace(/[\n\r]/g, ' ');
 
     // session context
-    const binaryContext = `\nESSENTIAL BINARY CONTEXT:\nAsset Symbol: ${symbol || "Unknown"}\nGraph Timeframe: ${timeframe}\nInvestment Duration: ${investment?.duration}\nInvestment Amount: $${investment?.amount}\n`;
+    const binaryContext = `\nESSENTIAL BINARY CONTEXT:\nAsset Symbol: ${safeSymbol}\nGraph Timeframe: ${safeTimeframe}\nInvestment Duration: ${safeDuration}\nInvestment Amount: $${safeAmount}\n`;
     const techContext = techniqueData && Array.isArray(techniqueData) 
       ? `\nMANDATED TECHNIQUES TO USE:\n${techniqueData.map((t, i) => `${i + 1}. ${t}`).join('\n')}`
       : (techniqueData ? `\nMANDATED TECHNIQUES TO USE:\n${JSON.stringify(techniqueData, null, 2)}` : "None specific provided.");
