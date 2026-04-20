@@ -13,10 +13,10 @@ import {
   calculatePersistentEntropy,
   calculateHamiltonianFlow,
   calculateZScoreSignificance,
-  calculatePLR
+  calculateBoundaryReversal
 } from "./src/utils/mathEngine.ts";
 
-import { BULL_PROMPT, BEAR_PROMPT, JUDGE_PROMPT, MIRROR_PROMPT, SKEPTIC_PROMPT } from "./src/constants/debatePrompts.ts";
+import { BULL_PROMPT, BEAR_PROMPT, JUDGE_PROMPT, SKEPTIC_PROMPT } from "./src/constants/debatePrompts.ts";
 
 async function callModel(params: {
   model: string,
@@ -54,12 +54,12 @@ async function callModel(params: {
     payload.response_format = { type: "json_object" };
   }
 
-  let retries = 3; // Reduced for faster failure
-  let delay = 1500; // Shorter initial delay
+  let retries = 6; // Increased retries for stability
+  let delay = 2000; // Longer initial delay
 
   while (retries >= 0) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 80000); // 80s for model call
+    const timeoutId = setTimeout(() => controller.abort(), 90000); // Increased to 90s
     try {
       const response = await fetch(
         endpoint,
@@ -76,15 +76,15 @@ async function callModel(params: {
 
     if (response.status === 429) {
       if (retries === 0) {
-        throw new Error("GitHub Models API Rate Limit Exceeded after 10 retries.");
+        throw new Error(`GitHub Models API Rate Limit Exceeded (429) after multiple retries. Please wait 1-2 minutes before trying again.`);
       }
-      // Add random jitter between 0 and 1000ms to prevent synchronized retries
-      const jitter = Math.floor(Math.random() * 1500);
+      // Add random jitter between 200 and 2000ms
+      const jitter = 200 + Math.floor(Math.random() * 1800);
       const totalDelay = delay + jitter;
-      console.warn(`Rate limited (429). Retrying in ${totalDelay}ms...`);
+      console.warn(`Rate limited (429). Retrying in ${totalDelay}ms... (${retries} retries left)`);
       await new Promise(resolve => setTimeout(resolve, totalDelay));
       retries--;
-      delay *= 1.8; // Exponential backoff
+      delay *= 2.2; // Aggressive backoff
       continue;
     }
 
@@ -107,7 +107,8 @@ async function callModel(params: {
         throw err;
       }
       console.warn(`Fetch error, retrying (${retries} left):`, err.message);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      // Wait longer for non-429 errors
+      await new Promise(resolve => setTimeout(resolve, delay * 2));
       retries--;
       delay *= 1.5;
       continue;
@@ -129,12 +130,15 @@ Respond ONLY with a valid JSON object matching this structure exactly:
   ],
   "candleBodies": [list_of_20_approx_body_sizes_in_pixels_or_relative_units],
   "currentPrice": numeric_value,
-  "keyLevels": [list_of_numeric_values],
+  "priceYPercent": numeric_percentage_0_to_100_of_vertical_chart_position_0_is_top_100_is_bottom,
+  "keyLevels": [balance_of_at_least_3_supports_and_3_resistances],
   "avgBodyHeight": numeric_value,
   "volumeAnomalies": "string",
   "visibleTrend": "string",
   "priceActionContext": "string"
 }
+
+CRITICAL: You MUST identify both key levels BELOW (support) and ABOVE (resistance) the current price to ensure a balanced analysis.
 `;
 
 async function startServer() {
@@ -181,7 +185,6 @@ async function startServer() {
       let structuralPriors = "No structural data provided.";
       let geometricOracles = "No geometric data provided.";
       let judge3 = null;
-      let judge4 = null;
       let marketGates = {
         volatility: { status: 'UNKNOWN', zScore: 0 },
         predictability: { isPredictable: false, type: 'UNKNOWN' },
@@ -200,10 +203,6 @@ async function startServer() {
         // Judge 3: Z-Score
         judge3 = calculateZScoreSignificance(candles);
         
-        // Judge 4: PLR
-        const levels = liquidityMap ? Object.keys(liquidityMap).map(Number) : [];
-        judge4 = calculatePLR(priceHistory[priceHistory.length-1], levels, candles);
-
         // New Gates
         const volRegime = calculateVolatilityRegime(priceHistory.map((p: number, i: number) => {
           const prev = priceHistory[i-1] || p;
@@ -263,7 +262,6 @@ async function startServer() {
         structuralPriors,
         geometricOracles,
         judge3,
-        judge4,
         marketGates
       });
 
@@ -282,21 +280,10 @@ async function startServer() {
       return res.status(400).json({ error: "Missing image data" });
     }
 
-    const selectedReasoningModel = "Llama-3.2-90B-Vision-Instruct";
-    
-    // SSRF Protection: Validate finalEndpoint
+    // API Key & Endpoint
     const finalApiKey = githubToken || process.env.GITHUB_TOKEN;
-    let finalEndpoint = githubEndpoint || process.env.GITHUB_API_BASE_URL || "https://models.inference.ai.azure.com/chat/completions";
+    const finalEndpoint = githubEndpoint || process.env.GITHUB_API_BASE_URL || "https://models.inference.ai.azure.com";
     
-    try {
-        const url = new URL(finalEndpoint);
-        if (url.hostname !== 'models.inference.ai.azure.com' && url.hostname !== 'api.github.com') {
-            return res.status(400).json({ error: "Invalid API endpoint domain" });
-        }
-    } catch {
-        return res.status(400).json({ error: "Invalid API endpoint URL format" });
-    }
-
     // Prompt Injection Protection: Sanitize user bounds
     const safeSymbol = (symbol || "Unknown").replace(/[\n\r]/g, ' ');
     const safeTimeframe = (timeframe || "").replace(/[\n\r]/g, ' ');
@@ -306,14 +293,13 @@ async function startServer() {
     // session context
     const binaryContext = `\nESSENTIAL BINARY CONTEXT:\nAsset Symbol: ${safeSymbol}\nGraph Timeframe: ${safeTimeframe}\nInvestment Duration: ${safeDuration}\nInvestment Amount: $${safeAmount}\n`;
     const techContext = techniqueData && Array.isArray(techniqueData) 
-      ? `\nMANDATED TECHNIQUES TO USE:\n${techniqueData.map((t, i) => `${i + 1}. ${t}`).join('\n')}`
-      : (techniqueData ? `\nMANDATED TECHNIQUES TO USE:\n${JSON.stringify(techniqueData, null, 2)}` : "None specific provided.");
+      ? `\nTECHNIQUES AVAILABLE:\n${techniqueData.map((t) => `- ${t}`).join('\n')}`
+      : (techniqueData ? `\nTECHNIQUES AVAILABLE:\n${JSON.stringify(techniqueData, null, 2)}` : "None specific provided.");
     const statsContext = statsData ? `\nPREVIOUS TRADING STATS FOR CONTINUITY:\n${JSON.stringify(statsData, null, 2)}` : "";
 
     try {
-      // Create flipped image on the fly and optimize both images for VISION
+      // Create primary optimized image for VISION
       let optimizedBase64: string;
-      let flippedImage: string;
       
       try {
         const buffer = Buffer.from(image, 'base64');
@@ -326,58 +312,70 @@ async function startServer() {
         }
 
         // Jimp v1: set quality directly in getBuffer options if possible, or use the v1 method if available
-        // Note: jimpImage.quality(50) seems to be missing in this environment's Jimp build.
-        // We will pass the quality option to getBuffer which is supported in Jimp v1.
         const compressedImage = await jimpImage.getBuffer("image/jpeg", { quality: 50 });
         optimizedBase64 = compressedImage.toString('base64');
-
-        const flipped = jimpImage.clone().flip({ horizontal: true, vertical: false });
-        const flippedBuffer = await flipped.getBuffer("image/jpeg", { quality: 50 });
-        flippedImage = flippedBuffer.toString('base64');
         console.log(`[API] Image optimization complete`);
       } catch (jimpErr: any) {
         console.error("[API] Jimp optimization failed, using original:", jimpErr.message);
         optimizedBase64 = image;
-        flippedImage = image; // Fallback
       }
 
-      // Helper function for serial model calls with timeout
+      // Helper function for serial model calls with timeout and model fallback
       const safeCall = async (prompt: string, img?: string, json: boolean = true) => {
-        try {
-          const raw = await callModel({ 
-            model: selectedReasoningModel, 
-            prompt, 
-            image: img, 
-            userApiKey: finalApiKey, 
-            userEndpoint: finalEndpoint, 
-            jsonMode: json 
-          });
-          return raw.replace(/```json|```/g, '').trim();
-        } catch (e: any) {
-          console.error("Internal model call failed:", e.message);
-          return null;
+        // Fallback chain for vision vs reasoning
+        const modelChain = ["gpt-4o-mini", "Llama-3.2-90B-Vision-Instruct", "gpt-4o"];
+
+        let lastError = "";
+
+        for (const modelName of modelChain) {
+          try {
+            const raw = await callModel({ 
+              model: modelName, 
+              prompt, 
+              image: img, 
+              userApiKey: finalApiKey, 
+              userEndpoint: finalEndpoint, 
+              jsonMode: json 
+            });
+            if (!raw) continue;
+            
+            // Enhanced cleanup
+            const clean = raw.replace(/```json|```/g, '').trim();
+            if (json) {
+              const start = clean.indexOf('{');
+              const end = clean.lastIndexOf('}');
+              if (start !== -1 && end !== -1) {
+                return clean.substring(start, end + 1);
+              }
+            }
+            return clean;
+          } catch (e: any) {
+            lastError = e.message;
+            console.warn(`[DEBATE] Call failed for model ${modelName}, trying next... :`, e.message);
+            // Wait a bit before trying fallback model
+            await new Promise(r => setTimeout(r, 1000));
+          }
         }
+
+        console.error(`[DEBATE] All models in chain failed. Last error: ${lastError}`);
+        return null;
       };
 
-      // 1. Vision Extractions (Run in parallel with allSettled for resilience)
+      // 1. Vision Extractions (Primary only)
       const visionResults = await Promise.allSettled([
-        safeCall(VISION_EXTRACTION_PROMPT, optimizedBase64),
-        safeCall(VISION_EXTRACTION_PROMPT, flippedImage)
+        safeCall(VISION_EXTRACTION_PROMPT, optimizedBase64)
       ]);
 
       const visionExtractionRaw = visionResults[0].status === 'fulfilled' ? visionResults[0].value : null;
-      const mirrorExtractionRaw = visionResults[1].status === 'fulfilled' ? visionResults[1].value : null;
-
-      const chartData = visionExtractionRaw || "{}";
-      const mirrorChartData = mirrorExtractionRaw || "{}";
 
       if (!visionExtractionRaw) {
-        throw new Error("Vision extraction failed. Please try a clearer chart screenshot.");
+        console.error("[DEBATE] CRITICAL: Vision extraction returned null.");
+        throw new Error("Vision extraction failed. The chart screenshot might be too blurry or the API is under heavy load. Please try a clearer screenshot.");
       }
 
       let extractedData: any = {};
       try {
-        extractedData = JSON.parse(chartData);
+        extractedData = JSON.parse(visionExtractionRaw);
       } catch {
         console.warn("Failed to parse chartData, using fallback defaults");
         extractedData = { recentOHLC: [], keyLevels: [], currentPrice: 0 };
@@ -397,7 +395,7 @@ async function startServer() {
       }
 
       const j3Result = calculateZScoreSignificance(bodies);
-      const j4Result = calculatePLR(Number(extractedData.currentPrice || 0), (extractedData.keyLevels || []).map(Number), ohlc);
+      const boundaryResult = calculateBoundaryReversal(Number(extractedData.priceYPercent || 50));
 
       // --- NEW: Calculate Advanced Metrics from Vision Data ---
       let visionStructuralPriors = structuralPriors || "";
@@ -405,7 +403,28 @@ async function startServer() {
       
       const priceHistory = ohlc.map(c => c.close);
       if (priceHistory.length >= 10) {
-        const cef = calculateCEF(priceHistory, { [priceHistory[priceHistory.length-1]]: 1 });
+        // BUILD A REAL LIQUIDITY MAP from keyLevels
+        const liquidityMap: Record<number, number> = {};
+        (extractedData.keyLevels || []).forEach((lvl: any) => {
+          const l = Number(lvl);
+          if (!isNaN(l)) {
+            liquidityMap[l] = (liquidityMap[l] || 0) + 1;
+          }
+        });
+        
+        // Ensure there's at least some data if keyLevels is empty
+        if (Object.keys(liquidityMap).length === 0) {
+          liquidityMap[priceHistory[priceHistory.length - 1]] = 1;
+          // Add a few points above and below to give the simulation room
+          const range = Math.max(...priceHistory) - Math.min(...priceHistory) || priceHistory[0] * 0.01;
+          liquidityMap[priceHistory[priceHistory.length - 1] + range * 0.02] = 0.5;
+          liquidityMap[priceHistory[priceHistory.length - 1] - range * 0.02] = 0.5;
+        }
+
+        const cef = calculateCEF(priceHistory, liquidityMap);
+        const cefDirSymbol = cef.predictedDirection === 'UP' ? '▲' : '▼';
+        const cefConfidenceText = cef.confidence > 0.4 ? "Strongly Suggests" : (cef.confidence > 0.1 ? "Leans Toward" : "Neutral/Unclear (Ambiguous)");
+
         const volRegime = calculateVolatilityRegime(ohlc.map((c, i) => ({
           high: c.high, low: c.low, close: c.close, prevClose: ohlc[i-1]?.close || c.close
         })));
@@ -427,28 +446,27 @@ async function startServer() {
         `.trim();
 
         visionStructuralPriors = `
-- Causal Entropic Force Direction: ${cef.predictedDirection}
-- CEF Confidence: ${(cef.confidence * 100).toFixed(2)}%
-- Market Physics: Smart money is currently gravitating toward ${cef.predictedDirection === 'UP' ? 'higher' : 'lower'} liquidity zones.
+- Causal Entropic Force (CEF): ${cefDirSymbol} ${cef.predictedDirection} (${cefConfidenceText})
+- CEF Confidence Score: ${(cef.confidence * 100).toFixed(2)}%
+- Market Physics: Smart money ${cef.confidence > 0.1 ? `gravitating toward ${cef.predictedDirection === 'UP' ? 'higher' : 'lower'} liquidity` : 'is currently in a high-entropy state with no clear gravitational bias'}.
 - Volatility Regime: ${volRegime.status} (Z-Score: ${volRegime.zScore.toFixed(2)})
 - Predictability: ${predictability.type} (Ratio: ${predictability.ratios.combined?.toFixed(2)})
 - Signal Robustness: ${(robustness.robustness * 100).toFixed(0)}% Stable
+- Chart Boundary: ${boundaryResult.label} (Position: ${boundaryResult.yPercent.toFixed(1)}%)
         `.trim();
       }
 
       const statScoresContext = `
-JUDGE 3 (Z-Score) Calculated: ${j3Result.zScore.toFixed(2)} -> Points: ${j3Result.points}/2.5
-JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.points}/2.5
+JUDGE 3 (Z-Score) Calculated: ${j3Result.zScore.toFixed(2)} -> Points: ${j3Result.points}/5.0
+BOUNDARY REVERSAL BIAS: ${boundaryResult.label} -> Bull: +${boundaryResult.bullPoints.toFixed(1)}, Bear: +${boundaryResult.bearPoints.toFixed(1)}
 `;
 
       // 2. Run Bull, Bear, and Skeptic in parallel
-      const dataContext = `\nEXTRACTED CHART DATA (JSON):\n${chartData}${techContext}${binaryContext}`;
-      const mirrorDataContext = `\nEXTRACTED FLIPPED CHART DATA (JSON):\n${mirrorChartData}${techContext}${binaryContext}`;
+      const dataContext = `\nEXTRACTED CHART DATA (JSON):\n${visionExtractionRaw}${techContext}${binaryContext}`;
 
       const bullPrompt = BULL_PROMPT.replace('{{STRUCTURAL_PRIORS}}', visionStructuralPriors) + dataContext;
       const bearPrompt = BEAR_PROMPT.replace('{{STRUCTURAL_PRIORS}}', visionStructuralPriors) + dataContext;
       const skepticPrompt = SKEPTIC_PROMPT + `\nGEOMETRIC ORACLES: ${visionGeometricOracles}` + dataContext;
-      const mirrorPrompt = MIRROR_PROMPT + mirrorDataContext + `\n\nAnalyze the data extracted from the horizontally flipped version of the chart. Output the signal as if interpreting a standard chart, returning ONLY valid JSON.`;
 
       // Parallelize core arguments (with allSettled for resilience)
       const agentResults = await Promise.allSettled([
@@ -461,9 +479,6 @@ JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.point
       const bearRaw = agentResults[1].status === 'fulfilled' ? agentResults[1].value : null;
       const skepticRaw = agentResults[2].status === 'fulfilled' ? agentResults[2].value : null;
 
-      // Mirror call (separate to keep concurrency manageable)
-      const mirrorRaw = await safeCall(mirrorPrompt);
-
       const parseResponse = (raw: string | null) => {
         if (!raw) return { reasoning: "Model call failed.", flippedSignal: "UNKNOWN", skepticVerdict: "RISK UNKNOWN" };
         try {
@@ -472,16 +487,17 @@ JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.point
            const start = text.indexOf('{');
            const end = text.lastIndexOf('}');
            
+           let jsonStr = text;
            if (start !== -1 && end !== -1) {
-             const jsonStr = text.substring(start, end + 1);
-             return JSON.parse(jsonStr);
+             jsonStr = text.substring(start, end + 1);
            }
-           return JSON.parse(text);
+           
+           return JSON.parse(jsonStr);
         } catch {
-           console.error("Parse failure on raw text:", raw.substring(0, 100));
+           console.error("Parse failure on raw text:", (raw || "").substring(0, 100));
            // Try to find the winner manually as a last resort
-           const winner = raw.match(/winner["\s:]+["']?(BULL|BEAR|NO_TRADE)["']?/i)?.[1]?.toUpperCase();
-           const signal = raw.match(/signal["\s:]+["']?(CALL|PUT|NO TRADE)["']?/i)?.[1]?.toUpperCase();
+           const winner = (raw || "").match(/winner["\s:]+["']?(BULL|BEAR|NO_TRADE)["']?/i)?.[1]?.toUpperCase();
+           const signal = (raw || "").match(/signal["\s:]+["']?(CALL|PUT|NO TRADE)["']?/i)?.[1]?.toUpperCase();
            
            return { 
              reasoning: "Parsing failed, but extracted signal.", 
@@ -496,7 +512,6 @@ JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.point
       const bull = parseResponse(bullRaw);
       const bear = parseResponse(bearRaw);
       const skeptic = parseResponse(skepticRaw);
-      const mirror = parseResponse(mirrorRaw);
 
       // 3. Final Arbitrator Call
       const judgePrompt = JUDGE_PROMPT
@@ -504,22 +519,21 @@ JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.point
         .replace('{{TECHNIQUES}}', techContext)
         .replace('{{STAT_SCORES}}', statScoresContext)
         .replace('{{GEOMETRIC_ORACLES}}', visionGeometricOracles) + 
-        `\n\nAGENT BULL ARGUMENT: ${bull.reasoning}\n\nAGENT BEAR ARGUMENT: ${bear.reasoning}\n\nMIRROR TEST RESULT: ${mirror.flippedSignal} (${mirror.reasoning})\n\nSKEPTIC FAILURE ANALYSIS: ${skeptic.skepticVerdict} (${skeptic.failureProbability}%)\n` + 
+        `\n\nAGENT BULL ARGUMENT: ${bull.reasoning}\n\nAGENT BEAR ARGUMENT: ${bear.reasoning}\n\nSKEPTIC FAILURE ANALYSIS: ${skeptic.skepticVerdict} (${skeptic.failureProbability}%)\n` + 
         dataContext + statsContext;
 
       const judgeRaw = await safeCall(judgePrompt);
       const judge = parseResponse(judgeRaw);
 
-      // Count techniques identified (looking for #X pattern)
+      // Count techniques explicitly listed by scanning the markdown list format
       const techUsed = judge.tradeDetails?.techniquesUsed || "";
-      const techUsedMatch = techUsed.match(/#\d+/g);
-      const techUsedCount = techUsedMatch ? [...new Set(techUsedMatch)].length : 0;
+      const techUsedCount = techUsed.split('\n').filter((line: string) => line.trim().startsWith('-') || line.trim().startsWith('*')).length;
 
       res.json({
         bull,
         bear,
         skeptic,
-        mirror,
+        mirror: { reasoning: "Mirror check disabled." },
         judge,
         techUsedCount,
         structuralPriors: visionStructuralPriors,

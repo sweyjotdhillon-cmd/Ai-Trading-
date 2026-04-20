@@ -35,7 +35,6 @@ const JUDGE_TASKS = {
   judge1: ["Scanning support nodes...", "Evaluating volume nodes...", "Mapping price patterns...", "Analyzing breakouts...", "Finalizing Bullish Case..."],
   judge2: ["Locating resistance zones...", "Analyzing selling pressure...", "Checking candle patterns...", "Projecting crash vectors...", "Finalizing Bearish Case..."],
   judge3: ["Searching for local traps...", "Calculating failure risk...", "Checking volume leaks...", "Scanning wick rejections...", "Finalizing Risk Verdict..."],
-  judge4: ["Flipping chart matrix...", "Mapping inverse signals...", "Cross-checking symmetry...", "Validating authenticity...", "Finalizing Mirror Test..."],
   system: ["Syncing live vision feed...", "Extracting OHLC data...", "Computing math oracles...", "Aligning market priors...", "Synthesizing full report..."]
 };
 
@@ -93,7 +92,6 @@ export function LiveAnalysis() {
      judge1: { text: "Waiting to initiate...", status: 'idle' },
      judge2: { text: "Waiting to initiate...", status: 'idle' },
      judge3: { text: "Waiting to initiate...", status: 'idle' },
-     judge4: { text: "Waiting to initiate...", status: 'idle' },
      system: { text: "Awaiting context...", status: 'idle' }
   });
   
@@ -150,15 +148,15 @@ export function LiveAnalysis() {
     setTradingDirection(null);
     setIsStatsSaved(false);
     setMode('camera');
+    setStockName('Bitcoin');
     setGraphTimeframe('30 minutes');
     setInvestmentDuration('5m');
     
     setJudgeLogs({
-      judge1: { text: "Waiting to initiate...", status: 'idle' },
-      judge2: { text: "Waiting to initiate...", status: 'idle' },
-      judge3: { text: "Waiting to initiate...", status: 'idle' },
-      judge4: { text: "Waiting to initiate...", status: 'idle' },
-      system: { text: "Awaiting context...", status: 'idle' }
+      judge1: { text: "Standby...", status: 'idle' },
+      judge2: { text: "Standby...", status: 'idle' },
+      judge3: { text: "Standby...", status: 'idle' },
+      system: { text: "Standby...", status: 'idle' }
     });
 
     if (streamRef.current) {
@@ -396,7 +394,6 @@ export function LiveAnalysis() {
       judge1: { text: "Initializing Deep Scan...", status: 'active' },
       judge2: { text: "Initializing Deep Scan...", status: 'active' },
       judge3: { text: "Initializing Deep Scan...", status: 'active' },
-      judge4: { text: "Initializing Deep Scan...", status: 'active' },
       system: { text: "Injecting global context...", status: 'active' }
     });
 
@@ -459,7 +456,6 @@ export function LiveAnalysis() {
           judge1: { text: JUDGE_TASKS.judge1[i], status: 'active' },
           judge2: { text: JUDGE_TASKS.judge2[i], status: 'active' },
           judge3: { text: JUDGE_TASKS.judge3[i], status: 'active' },
-          judge4: { text: JUDGE_TASKS.judge4[i], status: 'active' },
           system: { text: JUDGE_TASKS.system[i], status: 'active' },
         });
         await new Promise(r => setTimeout(r, 2000));
@@ -470,7 +466,6 @@ export function LiveAnalysis() {
         judge1: { text: JUDGE_TASKS.judge1[4], status: 'active' },
         judge2: { text: JUDGE_TASKS.judge2[4], status: 'active' },
         judge3: { text: JUDGE_TASKS.judge3[4], status: 'active' },
-        judge4: { text: JUDGE_TASKS.judge4[4], status: 'active' },
         system: { text: "Simultaneously synthesizing neural nodes...", status: 'active' },
       });
 
@@ -491,7 +486,6 @@ export function LiveAnalysis() {
           judge1: { text: `Bull: ${data.bull.reasoning.substring(0, 30)}...`, status: 'done' },
           judge2: { text: `Bear: ${data.bear.reasoning.substring(0, 30)}...`, status: 'done' },
           judge3: { text: `Risk: ${data.skeptic.skepticVerdict.substring(0, 30)}...`, status: 'done' },
-          judge4: { text: `Mirror: ${data.mirror.reasoning.substring(0, 30)}...`, status: 'done' },
           system: { text: `${data.techUsedCount} Patterns Identified ✅`, status: 'done' }
         });
         
@@ -789,44 +783,36 @@ export function LiveAnalysis() {
               <Text style={[tw`tracking-widest uppercase`, { fontSize: 8, color: '#8B95B0' }]}>Simultaneous execution</Text>
             </View>
             <View style={tw`gap-3`}>
-              <View style={[tw`bg-black/60 p-3 rounded-lg flex-row items-center justify-between border`, { borderColor: 'rgba(232, 121, 249, 0.3)' }]}>
+              <View style={[tw`bg-black/80 p-3 rounded-lg flex-row items-center justify-between border-l-4`, { borderColor: '#00FFFF', borderLeftColor: '#00FFFF' }]}>
                 <View style={tw`flex-1`}>
-                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#E879F9' }]}>System (Conceptual Context)</Text>
+                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#00FFFF' }]}>System (Conceptual Context)</Text>
                   <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.system.text}</Text>
                 </View>
-                {judgeLogs.system.status === 'done' && <Check size={16} color="#E879F9" />}
+                {judgeLogs.system.status === 'done' && <Check size={16} color="#00FFFF" />}
               </View>
 
-              <View style={[tw`bg-black/60 p-3 rounded-lg flex-row items-center justify-between border`, { borderColor: 'rgba(34, 211, 238, 0.3)' }]}>
+              <View style={[tw`bg-black/80 p-3 rounded-lg flex-row items-center justify-between border-l-4`, { borderColor: '#FF00FF', borderLeftColor: '#FF00FF' }]}>
                 <View style={tw`flex-1`}>
-                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#22D3EE' }]}>Judge 1 (Bull/Momentum)</Text>
+                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#FF00FF' }]}>Judge 1 (Bull Consensus)</Text>
                   <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.judge1.text}</Text>
                 </View>
-                {judgeLogs.judge1.status === 'done' && <Check size={16} color="#22D3EE" />}
+                {judgeLogs.judge1.status === 'done' && <Check size={16} color="#FF00FF" />}
               </View>
 
-              <View style={[tw`bg-black/60 p-3 rounded-lg flex-row items-center justify-between border`, { borderColor: 'rgba(251, 146, 60, 0.3)' }]}>
+              <View style={[tw`bg-black/80 p-3 rounded-lg flex-row items-center justify-between border-l-4`, { borderColor: '#FF1493', borderLeftColor: '#FF1493' }]}>
                 <View style={tw`flex-1`}>
-                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#FB923C' }]}>Judge 2 (Bear/Resistance)</Text>
+                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#FF1493' }]}>Judge 2 (Bear Pressure)</Text>
                   <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.judge2.text}</Text>
                 </View>
-                {judgeLogs.judge2.status === 'done' && <Check size={16} color="#FB923C" />}
+                {judgeLogs.judge2.status === 'done' && <Check size={16} color="#FF1493" />}
               </View>
 
-              <View style={[tw`bg-black/60 p-3 rounded-lg flex-row items-center justify-between border`, { borderColor: 'rgba(163, 230, 53, 0.3)' }]}>
+              <View style={[tw`bg-black/80 p-3 rounded-lg flex-row items-center justify-between border-l-4`, { borderColor: '#39FF14', borderLeftColor: '#39FF14' }]}>
                 <View style={tw`flex-1`}>
-                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#A3E635' }]}>Judge 3 (Skeptic/Risk)</Text>
+                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#39FF14' }]}>Judge 3 (Skeptic Filter)</Text>
                   <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.judge3.text}</Text>
                 </View>
-                {judgeLogs.judge3.status === 'done' && <Check size={16} color="#A3E635" />}
-              </View>
-
-              <View style={[tw`bg-black/60 p-3 rounded-lg flex-row items-center justify-between border`, { borderColor: 'rgba(129, 140, 248, 0.3)' }]}>
-                <View style={tw`flex-1`}>
-                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#818CF8' }]}>Judge 4 (Mirror/Symmetry)</Text>
-                  <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.judge4.text}</Text>
-                </View>
-                {judgeLogs.judge4.status === 'done' && <Check size={16} color="#818CF8" />}
+                {judgeLogs.judge3.status === 'done' && <Check size={16} color="#39FF14" />}
               </View>
             </View>
           </View>
@@ -868,7 +854,7 @@ export function LiveAnalysis() {
                 <Brain size={24} color="#D9B382" style={tw`mr-3`} />
                 <View>
                    <Text style={tw`text-lg font-bold text-white`}>Final Arbitrator Report</Text>
-                   <Text style={tw`text-[#8B95B0] text-[10px]`}>4-Judge Scoring Framework</Text>
+                   <Text style={tw`text-[#8B95B0] text-[10px]`}>3-Judge Scoring Framework</Text>
                 </View>
               </View>
               <View style={[
@@ -909,8 +895,7 @@ export function LiveAnalysis() {
                       {[
                         { label: 'J1 reasoning', val: data.j1, max: 5 },
                         { label: 'J2 vehicle', val: data.j2, max: 5 },
-                        { label: 'J3 z-score', val: data.j3, max: 2.5 },
-                        { label: 'J4 proximity', val: data.j4, max: 2.5 },
+                        { label: 'J3 z-score', val: data.j3, max: 5 },
                       ].map((j, i) => (
                         <View key={i} style={tw`flex-row justify-between items-center mb-1.5`}>
                           <Text style={tw`text-[8px] text-[#8B95B0] uppercase font-bold`}>{j.label}</Text>
@@ -937,8 +922,7 @@ export function LiveAnalysis() {
                 {[
                   { name: 'Judge 1 (Reasoning)', color: '#D9B382', text: `Score: ${analysis.judge.j1Score}/5. Analysis based on agent arguments and structural priors.` },
                   { name: 'Judge 2 (Vehicle)', color: '#D9B382', text: `Score: ${analysis.judge.j2Score}/5. Analysis of trend momentum and bullish/bearish vehicles.` },
-                  { name: 'Judge 3 (Z-Score)', color: '#D9B382', text: `Score: ${analysis.judge.j3Score}/2.5. Statistical significance of recent candle movements.` },
-                  { name: 'Judge 4 (PLR)', color: '#D9B382', text: `Score: ${analysis.judge.j4Score}/2.5. Price interaction proximity to key levels.` }
+                  { name: 'Judge 3 (Z-Score)', color: '#D9B382', text: `Score: ${analysis.judge.j3Score}/5. Statistical significance of recent candle movements.` }
                 ].map((j, i) => (
                   <View key={i} style={tw`mb-4 last:mb-0`}>
                       <Text style={[tw`text-[9px] font-black uppercase mb-1`, { color: j.color }]}>{j.name}</Text>
@@ -977,7 +961,7 @@ export function LiveAnalysis() {
 
             {analysis.judge.tradeDetails?.techniquesUsed && (
               <View style={tw`mb-8`}>
-                 <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition (Indexed)</Text>
+                 <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition ({analysis.techUsedCount} Found)</Text>
                  <View style={tw`bg-black/30 p-4 rounded-xl border border-[#D9B382]/10`}>
                     <Text style={tw`text-white text-xs leading-5 font-bold italic text-[#D9B382]`}>{analysis.judge.tradeDetails.techniquesUsed}</Text>
                  </View>

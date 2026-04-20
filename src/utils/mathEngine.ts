@@ -84,7 +84,7 @@ export function calculateRQA(series: number[], epsilon = 0.1) {
   for (let d = 1; d < n; d++) {
     let currentRun = 0;
     for (let i = 0; i < n - d; i++) {
-        let j = i + d;
+        const j = i + d;
         if (rp[i][j] === 1) {
             currentRun++;
         } else {
@@ -197,42 +197,46 @@ export function calculateZScoreSignificance(candles: { open: number, close: numb
   
   const zScore = stdDev === 0 ? 0 : (currentBody - mean) / stdDev;
   
-  let points = -1.0; // Default non-zero value
-  if (zScore >= 2.0) points = 2.5;
-  else if (zScore >= 1.5) points = 2.0;
-  else if (zScore >= 1.0) points = 1.5;
-  else if (zScore >= 0.5) points = 0.5;
-  else if (zScore > 0.0) points = -0.5;
-  else if (zScore > -1.0) points = -1.5;
-  else points = -2.5;
+  let points = -0.01; // Tiny epsilon to avoid clean zero
+  if (zScore >= 2.0) points = 5.0;
+  else if (zScore >= 1.5) points = 4.0;
+  else if (zScore >= 1.0) points = 3.0;
+  else if (zScore >= 0.5) points = 1.0;
+  else if (zScore > 0.0) points = -0.1;
+  else if (zScore > -1.0) points = -1.0;
+  else points = -3.0;
+
+  // Final guard against 0
+  if (points === 0) points = -0.1;
 
   return { zScore, points };
 }
 
 /**
- * Judge 4: Price-to-Level Proximity Ratio (PLR)
- * Measures precision of reaction to S/R levels.
+ * Physical Boundary Reversal Logic
+ * Gives extra weight to reversals when price is at the extreme edges of the chart.
+ * @param yPercent 0 (top) to 100 (bottom)
  */
-export function calculatePLR(currentPrice: number, levels: number[], candles: { open: number, close: number }[]) {
-  if (levels.length === 0 || candles.length === 0) return { plr: 0, points: -1.0, nearestLevel: null };
+export function calculateBoundaryReversal(yPercent: number) {
+  let bullPoints = 0;
+  let bearPoints = 0;
+  let label = "NEUTRAL (CENTER)";
 
-  const avgBody = candles.slice(-20).reduce((acc, c) => acc + Math.abs(c.close - c.open), 0) / Math.min(candles.length, 20);
-  const nearestLevel = levels.reduce((prev, curr) => 
-    Math.abs(curr - currentPrice) < Math.abs(prev - currentPrice) ? curr : prev
-  );
+  if (yPercent <= 5) {
+    bearPoints = 1.0; // Price is at top, favor DOWN
+    label = "EXTREME HIGH (DANGER)";
+  } else if (yPercent >= 95) {
+    bullPoints = 1.0; // Price is at bottom, favor UP
+    label = "EXTREME LOW (OVERSOLD)";
+  } else if (yPercent <= 15) {
+    bearPoints = 0.5;
+    label = "HIGH RANGE";
+  } else if (yPercent >= 85) {
+    bullPoints = 0.5;
+    label = "LOW RANGE";
+  }
 
-  const distance = Math.abs(currentPrice - nearestLevel);
-  const plr = 1 - (distance / (avgBody || 1e-9));
-  
-  let points = -1.0; // Default non-zero value
-  if (plr >= 0.85) points = 2.5;
-  else if (plr >= 0.65) points = 1.5;
-  else if (plr >= 0.45) points = 0.5;
-  else if (plr >= 0.25) points = -0.5;
-  else if (plr >= 0.0) points = -1.5;
-  else points = -2.5;
-
-  return { plr: Math.max(0, plr), points, nearestLevel };
+  return { bullPoints, bearPoints, label, yPercent };
 }
 
 /**
@@ -380,8 +384,13 @@ export function calculateCEF(priceSeries: number[], liquidityMap: Record<number,
     futureEntropy[dir] = ss.mean(pathEntropies);
   }
 
-  const predictedDirection = futureEntropy.UP > futureEntropy.DOWN ? 'UP' : 'DOWN';
-  const confidence = Math.abs(futureEntropy.UP - futureEntropy.DOWN) / Math.max(futureEntropy.UP, futureEntropy.DOWN, 0.0001);
+  let predictedDirection: 'UP' | 'DOWN' | 'NEUTRAL' = futureEntropy.UP > futureEntropy.DOWN ? 'UP' : 'DOWN';
+  const confidence = Math.max(futureEntropy.UP, futureEntropy.DOWN, 0.0001) === 0.0001 ? 0 : 
+                     Math.abs(futureEntropy.UP - futureEntropy.DOWN) / Math.max(futureEntropy.UP, futureEntropy.DOWN, 0.0001);
+
+  if (confidence < 0.05 || (futureEntropy.UP === 0 && futureEntropy.DOWN === 0)) {
+    predictedDirection = 'NEUTRAL';
+  }
 
   return { predictedDirection, confidence, futureEntropy };
 }
