@@ -8,11 +8,9 @@ import {
   TextInput,
   Image,
   Platform,
-  Animated,
-  Easing,
-  Dimensions,
   Modal
 } from 'react-native';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   CheckCircle, 
   Camera, 
@@ -87,6 +85,10 @@ export function LiveAnalysis() {
   const videoRef = useRef<any>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   
+  // Real-Time Scout (10s Tick)
+  const [scoutActive, setScoutActive] = useState(false);
+  const [scoutData, setScoutData] = useState<{action: string, reason: string} | null>(null);
+
   // Parallel Judge Logs
   const [judgeLogs, setJudgeLogs] = useState({
      judge1: { text: "Waiting to initiate...", status: 'idle' },
@@ -151,6 +153,8 @@ export function LiveAnalysis() {
     setStockName('Bitcoin');
     setGraphTimeframe('30 minutes');
     setInvestmentDuration('5m');
+    setScoutActive(false);
+    setScoutData(null);
     
     setJudgeLogs({
       judge1: { text: "Standby...", status: 'idle' },
@@ -168,7 +172,9 @@ export function LiveAnalysis() {
     }
     setIsCameraActive(false);
 
-    alert("Analysis reset. Controls restored to defaults.");
+    setTimeout(() => {
+      alert("Analysis reset. Controls restored to defaults.");
+    }, 300);
   };
 
   const startCamera = async () => {
@@ -188,10 +194,14 @@ export function LiveAnalysis() {
         setIsCameraActive(true);
       } catch (err) {
         console.error("Camera access error:", err);
-        alert("Camera access denied or not available. Please ensure you have granted permission.");
+        setTimeout(() => {
+          alert("Camera access denied or not available. Please ensure you have granted permission.");
+        }, 300);
       }
     } else {
-      alert("Live camera is supported on web interface only via standard browser APIs.");
+      setTimeout(() => {
+        alert("Live camera is supported on web interface only via standard browser APIs.");
+      }, 300);
     }
   };
 
@@ -205,6 +215,46 @@ export function LiveAnalysis() {
     }
     setIsCameraActive(false);
   };
+
+  useEffect(() => {
+    let intervalId: any;
+    if (scoutActive && analysis && isCameraActive && videoRef.current) {
+      intervalId = setInterval(async () => {
+        try {
+          const video = videoRef.current;
+          const canvas = document.createElement('canvas');
+          // Standard downscale for Scout: 500px to be fast
+          canvas.width = 500;
+          canvas.height = (video.videoHeight / video.videoWidth) * 500;
+          const ctx = canvas.getContext('2d');
+          
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const scoutImg = canvas.toDataURL('image/jpeg', 0.6);
+            
+            // Build the Anchor Thesis string
+            const anchorThesis = `Direction: ${analysis.judge.tradeDetails?.signal}, Insight: ${analysis.judge.tradeDetails?.bigInsight}, Verdict: ${analysis.judge.ruling}`;
+            
+            const res = await fetch(`http://localhost:3000/api/scout`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ image: scoutImg, anchorThesis })
+            });
+            
+            if (res.ok) {
+              const scoutJSON = await res.json();
+              setScoutData(scoutJSON);
+            }
+          }
+        } catch (e) {
+          console.error("Scout loop error", e);
+        }
+      }, 10000); // 10 second ticker
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [scoutActive, analysis, isCameraActive]);
 
   const closePickers = () => {
     setShowTfPicker(false);
@@ -251,10 +301,14 @@ export function LiveAnalysis() {
           // Expecting either { techniques: [] } or a direct array
           const list = Array.isArray(json) ? json : (json.techniques || []);
           setTechniquesList(list);
-          alert(`Successfully loaded ${list.length} techniques from ${file.name}.`);
+          setTimeout(() => {
+            alert(`Successfully loaded ${list.length} techniques from ${file.name}.`);
+          }, 300);
         } catch (err) {
           console.error("Failed to parse technique file:", err);
-          alert("Invalid technique file format. Please upload a JSON file containing a list of techniques.");
+          setTimeout(() => {
+            alert("Invalid technique file format. Please upload a JSON file containing a list of techniques.");
+          }, 300);
         }
       };
       reader.readAsText(file);
@@ -276,10 +330,14 @@ export function LiveAnalysis() {
           const maxIdx = list.reduce((max: number, item: any) => Math.max(max, item.sessionIndex || 0), 0);
           setSessionIndex(maxIdx + 1);
           
-          alert(`Successfully loaded ${list.length} records from ${file.name}. This is analysis session #${maxIdx + 1}.`);
+          setTimeout(() => {
+            alert(`Successfully loaded ${list.length} records from ${file.name}. This is analysis session #${maxIdx + 1}.`);
+          }, 300);
         } catch (err) {
           console.error("Failed to parse stats file:", err);
-          alert("Invalid stats file format. Please upload a JSON file containing previous results.");
+          setTimeout(() => {
+            alert("Invalid stats file format. Please upload a JSON file containing previous results.");
+          }, 300);
         }
       };
       reader.readAsText(file);
@@ -335,10 +393,14 @@ export function LiveAnalysis() {
       localStats.stats.push(newEntry as never);
       sessionStorage.setItem('stats_surface_data', JSON.stringify(localStats));
       
-      alert(`Trade result recorded as ${outcome}. Stat entry #${entryIdx} created.`);
+      setTimeout(() => {
+        alert(`Trade result recorded as ${outcome}. Stat entry #${entryIdx} created.`);
+      }, 300);
     } catch (err) {
       console.error("Failed to save stats:", err);
-      alert("Error saving trade result.");
+      setTimeout(() => {
+        alert("Error saving trade result.");
+      }, 300);
     }
   };
 
@@ -355,7 +417,9 @@ export function LiveAnalysis() {
     URL.revokeObjectURL(url);
     
     setSessionIndex(prev => prev + 1);
-    alert(`File ${fileName} downloaded. Upload it for your next analysis session to continue the series!`);
+    setTimeout(() => {
+      alert(`File ${fileName} downloaded. Upload it for your next analysis session to continue the series!`);
+    }, 300);
   };
 
   const handleAnalyze = async () => {
@@ -374,7 +438,9 @@ export function LiveAnalysis() {
     }
 
     if (!finalImageToAnalyze) {
-      alert("Please start the camera or upload a chart image first.");
+      setTimeout(() => {
+        alert("Please start the camera or upload a chart image first.");
+      }, 300);
       return;
     }
 
@@ -513,6 +579,7 @@ export function LiveAnalysis() {
           await new Promise(r => setTimeout(r, 4000)); // Show arrows for 4 seconds
           setTradingPhase('ENTRY_CONFIRMED');
           setAnalysisStep('EXECUTE NOW!');
+          setScoutActive(true); // START THE FAST BACKGROUND TICKER
         } else {
           // Screenshot Analysis: Direct to Entry phase
           setTradingPhase('ENTRY_CONFIRMED');
@@ -522,10 +589,10 @@ export function LiveAnalysis() {
         setAnalysis(data);
         setIsStatsSaved(false); // Reset stats saved state for new analysis
         
-        // Final reset after some time
+        // Return phase back to idle after display, but keep scout running until reset 
         setTimeout(() => {
            setTradingPhase('IDLE');
-           setAnalysisStep(null);
+           setAnalysisStep('LIVE TICK SCOUT ACTIVE');
            setTradingDirection(null);
         }, 6000);
 
@@ -549,34 +616,74 @@ export function LiveAnalysis() {
 
 
   return (
-    <View style={tw`flex-1 bg-black overflow-hidden relative`}>
+    <View style={[tw`flex-1 bg-black relative`, { height: '100%' }]}>
       {/* Full Screen High-Intensity Overlays */}
       <Modal
         visible={tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection}
         transparent={true}
-        animationType="fade"
+        animationType="none"
       >
-        <View style={[
-            tw`flex-1 justify-center items-center`, 
-            tradingDirection === 'UP' ? tw`bg-green-500` : (tradingDirection === 'DOWN' ? tw`bg-red-500` : tw`bg-yellow-600`)
-        ]}>
-           <View style={tw`items-center px-6`}>
-             <Text style={tw`text-white font-[Anton] text-8xl leading-[0.85] uppercase text-center mb-4`}>
-                {tradingDirection === 'UP' ? 'PULL UP' : (tradingDirection === 'DOWN' ? 'PULL DOWN' : 'NO TRADE')}
-             </Text>
-             <View style={tw`h-1 w-24 bg-white/40 mb-4`} />
-             <Text style={tw`text-white/90 font-black text-4xl tracking-tighter uppercase text-center`}>
-                {tradingDirection === 'UP' ? 'EXECUTE NOW' : (tradingDirection === 'DOWN' ? 'EXECUTE NOW' : 'ABORT SIGNAL')}
-             </Text>
-           </View>
-        </View>
+        <AnimatePresence>
+          {(tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection) && (
+            <motion.div
+              initial={{ scale: 1.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 2, opacity: 0 }}
+              className={`flex-1 justify-center items-center ${tradingDirection === 'UP' ? 'bg-green-600' : (tradingDirection === 'DOWN' ? 'bg-red-600' : 'bg-yellow-700')}`}
+              style={{ display: 'flex', height: '100vh', width: '100vw' }}
+            >
+               {/* High-speed scanning tech background */}
+               <motion.div 
+                 animate={{ opacity: [0.1, 0.3, 0.1] }}
+                 transition={{ duration: 0.5, repeat: Infinity }}
+                 className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,rgba(0,0,0,0.1)_2px,rgba(0,0,0,0.1)_4px)]"
+               />
+               
+               <div style={tw`items-center px-10 relative z-10`}>
+                 <motion.div
+                   animate={{ scale: [1, 1.05, 1] }}
+                   transition={{ duration: 0.2, repeat: Infinity }}
+                 >
+                   <Text style={tw`text-white font-[Anton] text-[120px] leading-[0.85] uppercase text-center mb-6`}>
+                      {tradingDirection === 'UP' ? 'PULL UP' : (tradingDirection === 'DOWN' ? 'PULL DOWN' : 'HOLD')}
+                   </Text>
+                 </motion.div>
+                 
+                 <View style={tw`h-1 w-48 bg-white/60 mb-6`} />
+                 
+                 <motion.div
+                   initial={{ y: 20, opacity: 0 }}
+                   animate={{ y: 0, opacity: 1 }}
+                   transition={{ delay: 0.2 }}
+                 >
+                   <Text style={tw`text-white font-black text-5xl tracking-tighter uppercase text-center`}>
+                      {tradingDirection === 'UP' ? 'EXECUTE NOW' : (tradingDirection === 'DOWN' ? 'EXECUTE NOW' : 'SIGNAL ABORTED')}
+                   </Text>
+                 </motion.div>
+
+                 <motion.div 
+                    animate={{ opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                    style={tw`mt-10 px-6 py-2 border-2 border-white rounded-full`}
+                 >
+                    <Text style={tw`text-white font-black text-xl tracking-[5px]`}>STRIKE READY</Text>
+                 </motion.div>
+               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </Modal>
 
       {tradingPhase === 'WAITING_FOR_ENTRY' && tradingDirection && (
           <AnimatedArrows direction={tradingDirection} />
       )}
 
-      <ScrollView style={tw`flex-1 bg-black`}>
+      <ScrollView 
+        style={tw`flex-1 bg-black`}
+        contentContainerStyle={[tw`pb-24`, { flexGrow: 1 }]}
+        showsVerticalScrollIndicator={true}
+        alwaysBounceVertical={true}
+      >
         {Platform.OS === 'web' && (
           <>
             <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept="image/*" onChange={onFileChange} />
@@ -585,7 +692,7 @@ export function LiveAnalysis() {
           </>
         )}
       
-      <View style={tw`p-4 pb-24`}>
+      <View style={tw`p-4`}>
         {/* Compact Terminal Header */}
         <View style={tw`flex-row justify-between items-end mb-4 px-1`}>
           <View>
@@ -749,6 +856,20 @@ export function LiveAnalysis() {
                      <Text style={tw`text-white font-bold text-[8px]`}>STOP</Text>
                    </TouchableOpacity>
                  )}
+                 {scoutActive && (
+                   <View style={tw`absolute bottom-2 left-2 right-2 bg-black/90 p-2 rounded-lg border border-[#00FFFF]/30`}>
+                      <View style={tw`flex-row justify-between items-center mb-1`}>
+                         <View style={tw`flex-row items-center`}>
+                           <View style={tw`w-2 h-2 rounded-full bg-[#00FFFF] mr-2`} />
+                           <Text style={tw`text-[#00FFFF] font-black text-[9px] uppercase tracking-widest`}>Live Tick Scout</Text>
+                         </View>
+                         <Text style={tw`text-white font-black text-[10px]`}>{scoutData ? scoutData.action : 'ANALYZING...'}</Text>
+                      </View>
+                      {scoutData && (
+                        <Text style={tw`text-white/80 text-[9px] leading-3 font-medium`}>{scoutData.reason}</Text>
+                      )}
+                   </View>
+                 )}
                </View>
             ) : (
               <TouchableOpacity
@@ -770,52 +891,82 @@ export function LiveAnalysis() {
             )}
         </View>
 
-        {/* Action Bar / Live Debate UI */}
+        {/* Action Bar / Live Debate UI Overlay */}
         {loading ? (
-          <View style={tw`bg-[#14161C] rounded-2xl border border-[#D9B382]/30 p-4 mt-4 shadow-2xl`}>
-            <View style={tw`flex-row items-center justify-between mb-4 border-b border-white/10 pb-3`}>
-              <View style={tw`flex-row items-center gap-2`}>
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-[#14161C] rounded-2xl border border-[#D9B382]/30 p-4 mt-4 shadow-2xl relative overflow-hidden"
+          >
+            {/* Visual Scanning Background */}
+            <div className="absolute inset-0 opacity-10 pointer-events-none">
+              <div className="absolute inset-0 bg-[radial-gradient(#D9B382_1px,transparent_1px)] [background-size:16px_16px]" />
+              <motion.div 
+                animate={{ y: [0, 200, 0] }}
+                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                className="absolute top-0 left-0 right-0 h-px bg-[#D9B382] shadow-[0_0_15px_#D9B382]"
+              />
+            </div>
+
+            <div style={tw`flex-row items-center justify-between mb-4 border-b border-white/10 pb-3 relative z-10`}>
+              <div style={tw`flex-row items-center gap-2`}>
                  <ActivityIndicator color="#D9B382" size="small" />
                  <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 10, color: '#D9B382' }]}>
                    {analysisStep || 'Live Neural Debate Active'}
                  </Text>
-              </View>
+              </div>
               <Text style={[tw`tracking-widest uppercase`, { fontSize: 8, color: '#8B95B0' }]}>Simultaneous execution</Text>
-            </View>
-            <View style={tw`gap-3`}>
-              <View style={[tw`bg-black/80 p-3 rounded-lg flex-row items-center justify-between border-l-4`, { borderColor: '#00FFFF', borderLeftColor: '#00FFFF' }]}>
-                <View style={tw`flex-1`}>
-                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#00FFFF' }]}>System (Conceptual Context)</Text>
-                  <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.system.text}</Text>
-                </View>
-                {judgeLogs.system.status === 'done' && <Check size={16} color="#00FFFF" />}
-              </View>
+            </div>
 
-              <View style={[tw`bg-black/80 p-3 rounded-lg flex-row items-center justify-between border-l-4`, { borderColor: '#FF00FF', borderLeftColor: '#FF00FF' }]}>
-                <View style={tw`flex-1`}>
-                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#FF00FF' }]}>Judge 1 (Bull Consensus)</Text>
-                  <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.judge1.text}</Text>
-                </View>
-                {judgeLogs.judge1.status === 'done' && <Check size={16} color="#FF00FF" />}
-              </View>
-
-              <View style={[tw`bg-black/80 p-3 rounded-lg flex-row items-center justify-between border-l-4`, { borderColor: '#FF1493', borderLeftColor: '#FF1493' }]}>
-                <View style={tw`flex-1`}>
-                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#FF1493' }]}>Judge 2 (Bear Pressure)</Text>
-                  <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.judge2.text}</Text>
-                </View>
-                {judgeLogs.judge2.status === 'done' && <Check size={16} color="#FF1493" />}
-              </View>
-
-              <View style={[tw`bg-black/80 p-3 rounded-lg flex-row items-center justify-between border-l-4`, { borderColor: '#39FF14', borderLeftColor: '#39FF14' }]}>
-                <View style={tw`flex-1`}>
-                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#39FF14' }]}>Judge 3 (Risk Analyst Filter)</Text>
-                  <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.judge3.text}</Text>
-                </View>
-                {judgeLogs.judge3.status === 'done' && <Check size={16} color="#39FF14" />}
-              </View>
-            </View>
-          </View>
+            <div style={tw`gap-3 relative z-10`}>
+              {[
+                { key: 'system', label: 'System Context', color: '#00FFFF', bg: 'rgba(0, 255, 255, 0.05)' },
+                { key: 'judge1', label: 'Judge 1: Bull Consensus', color: '#FF00FF', bg: 'rgba(255, 0, 255, 0.05)' },
+                { key: 'judge2', label: 'Judge 2: Bear Pressure', color: '#FF1493', bg: 'rgba(255, 20, 147, 0.05)' },
+                { key: 'judge3', label: 'Judge 3: Risk Filter', color: '#39FF14', bg: 'rgba(57, 255, 20, 0.05)' }
+              ].map((item, idx) => (
+                <motion.div
+                  key={item.key}
+                  initial={{ x: -20, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: idx * 0.1 }}
+                  className="bg-black/80 p-3 rounded-lg flex-row items-center justify-between border-l-4"
+                  style={{ borderColor: item.color, backgroundColor: item.bg }}
+                >
+                  <div style={tw`flex-1`}>
+                    <div className="flex flex-row items-center gap-2 mb-1">
+                      <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 9, color: item.color }]}>{item.label}</Text>
+                    </div>
+                    <motion.p
+                      key={judgeLogs[item.key as keyof typeof judgeLogs].text}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="text-white font-bold text-xs"
+                    >
+                      {judgeLogs[item.key as keyof typeof judgeLogs].text}
+                    </motion.p>
+                  </div>
+                  {judgeLogs[item.key as keyof typeof judgeLogs].status === 'done' ? (
+                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="ml-2">
+                      <Check size={16} color={item.color} />
+                    </motion.div>
+                  ) : (
+                    <div className="flex flex-row items-end gap-0.5 h-3">
+                      {[0, 1, 2].map((i) => (
+                        <motion.div
+                          key={i}
+                          animate={{ height: [2, 8, 2] }}
+                          transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.2 }}
+                          className="w-0.5 bg-white/30"
+                        />
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
         ) : (
           <TouchableOpacity
             onPress={() => {
@@ -848,71 +999,114 @@ export function LiveAnalysis() {
         )}
 
         {analysis && (
-          <View style={tw`bg-[#14161C] rounded-[24px] border border-white/10 p-6 shadow-2xl mb-8`}>
-            <View style={tw`flex-row items-center justify-between mb-6 pb-4 border-b border-white/5`}>
-              <View style={tw`flex-row items-center`}>
-                <Brain size={24} color="#D9B382" style={tw`mr-3`} />
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-[#14161C] rounded-[24px] border border-white/10 p-6 shadow-2xl mb-8 overflow-hidden relative"
+          >
+            {/* Visual Polish: Glassmorphism/Tactical Background */}
+            <div className="absolute top-0 right-0 w-64 h-64 bg-[#D9B382]/5 rounded-full -mr-32 -mt-32 blur-3xl pointer-events-none" />
+            
+            <div style={tw`flex-row items-center justify-between mb-6 pb-4 border-b border-white/5 relative z-10`}>
+              <div style={tw`flex-row items-center`}>
+                <motion.div
+                  animate={{ rotate: [0, 10, -10, 0] }}
+                  transition={{ duration: 4, repeat: Infinity }}
+                >
+                  <Brain size={24} color="#D9B382" style={tw`mr-3`} />
+                </motion.div>
                 <View>
                    <Text style={tw`text-lg font-bold text-white`}>Final Arbitrator Report</Text>
                    <Text style={tw`text-[#8B95B0] text-[10px]`}>3-Judge Scoring Framework</Text>
                 </View>
-              </View>
-              <View style={[
-                  tw`px-3 py-1 rounded-full flex-row items-center`,
-                  analysis.judge.decision === 'STRONG SIGNAL' ? tw`bg-green-500/10` : (analysis.judge.decision === 'MODERATE' ? tw`bg-yellow-500/10` : tw`bg-red-500/10`)
-                ]}>
+              </div>
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                className={`px-3 py-1 rounded-full flex flex-row items-center ${analysis.judge.decision === 'STRONG SIGNAL' ? 'bg-green-500/10' : (analysis.judge.decision === 'MODERATE' ? 'bg-yellow-500/10' : 'bg-red-500/10')}`}
+              >
                 {analysis.judge.decision === 'STRONG SIGNAL' ? <CheckCircle size={14} color="#22C55E" /> : (analysis.judge.decision === 'MODERATE' ? <AlertTriangle size={14} color="#EAB308" /> : <XCircle size={14} color="#EF4444" />)}
                 <Text style={[
                   tw`ml-1 text-[10px] font-black`,
                   analysis.judge.decision === 'STRONG SIGNAL' ? tw`text-green-500` : (analysis.judge.decision === 'MODERATE' ? tw`text-yellow-500` : tw`text-red-500`)
                 ]}>{analysis.judge.decision}</Text>
-              </View>
-            </View>
+              </motion.div>
+            </div>
 
-            {/* ASCII Report Display */}
-            <View style={tw`bg-black/60 rounded-2xl p-4 border border-[#D9B382]/20 mb-6`}>
+            {/* ASCII Report Display - High Tech Monospace Card */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              className="bg-black/60 rounded-2xl p-4 border border-[#D9B382]/20 mb-6 group hover:border-[#D9B382]/40 transition-colors"
+            >
+               <div className="absolute top-2 right-2 opacity-20"><Terminal size={12} color="#D9B382" /></div>
                <Text style={tw`text-[#D9B382] font-mono text-xs mb-2`}>{analysis.judge.formattedReport}</Text>
-            </View>
+            </motion.div>
 
-            {/* Dynamic Comparison Scorecards */}
+            {/* Dynamic Comparison Scorecards - Tactical Readouts */}
             {analysis.judge.cases ? (
-              <View style={tw`flex-row gap-3 mb-6`}>
-                {['bull', 'bear'].map((side) => {
+              <div className="flex flex-row gap-3 mb-6">
+                {['bull', 'bear'].map((side, idx) => {
                   const data = analysis.judge.cases[side];
                   const isWinner = side.toUpperCase() === analysis.judge.winner.toUpperCase();
+                  const sideColor = side === 'bull' ? '#22C55E' : '#EF4444';
+                  
                   return (
-                    <View key={side} style={[
-                      tw`flex-1 bg-black/40 rounded-2xl p-4 border`,
-                      isWinner ? (side === 'bull' ? tw`border-green-500/40` : tw`border-red-500/40`) : tw`border-white/5`
-                    ]}>
-                      <View style={tw`flex-row items-center justify-between mb-3`}>
+                    <motion.div 
+                      key={side}
+                      initial={{ opacity: 0, x: side === 'bull' ? -20 : 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.4 + (idx * 0.1) }}
+                      className={`flex-1 bg-black/40 rounded-2xl p-4 border relative overflow-hidden ${isWinner ? (side === 'bull' ? 'border-green-500/40' : 'border-red-500/40') : 'border-white/5'}`}
+                    >
+                      {isWinner && (
+                        <div className="absolute top-0 right-0 p-1">
+                          <Check size={8} color={sideColor} />
+                        </div>
+                      )}
+                      
+                      <div className="flex flex-row items-center justify-between mb-3">
                         <Text style={[tw`text-[10px] font-black uppercase tracking-widest`, side === 'bull' ? tw`text-green-400` : tw`text-red-400`]}>
                           {side === 'bull' ? 'Case 1: Bull' : 'Case 2: Bear'}
                         </Text>
-                        {isWinner && <View style={tw`w-1.5 h-1.5 rounded-full ${side === 'bull' ? 'bg-green-500' : 'bg-red-500'}`} />}
-                      </View>
+                      </div>
                       
                       {[
                         { label: 'J1 reasoning', val: data.j1, max: 5 },
                         { label: 'J2 vehicle', val: data.j2, max: 5 },
                         { label: 'J3 z-score', val: data.j3, max: 5 },
                       ].map((j, i) => (
-                        <View key={i} style={tw`flex-row justify-between items-center mb-1.5`}>
-                          <Text style={tw`text-[8px] text-[#8B95B0] uppercase font-bold`}>{j.label}</Text>
-                          <Text style={tw`text-white text-[9px] font-mono`}>{j.val}/{j.max}</Text>
-                        </View>
+                        <div key={i} className="mb-2">
+                          <div className="flex flex-row justify-between items-center mb-1">
+                            <Text style={tw`text-[8px] text-[#8B95B0] uppercase font-bold`}>{j.label}</Text>
+                            <Text style={tw`text-white text-[9px] font-mono`}>{j.val}/{j.max}</Text>
+                          </div>
+                          <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                            <motion.div 
+                              initial={{ width: 0 }}
+                              animate={{ width: `${(j.val / j.max) * 100}%` }}
+                              transition={{ duration: 1, delay: 0.8 + (idx * 0.2) + (i * 0.1) }}
+                              className="h-full"
+                              style={{ backgroundColor: sideColor }}
+                            />
+                          </div>
+                        </div>
                       ))}
                       
-                      <View style={tw`mt-3 pt-3 border-t border-white/5 flex-row justify-between items-center`}>
+                      <div className="mt-3 pt-3 border-t border-white/5 flex flex-row justify-between items-center">
                         <Text style={tw`text-[8px] font-black text-[#D9B382] uppercase`}>Total</Text>
-                        <Text style={[tw`text-xs font-black`, isWinner ? (side === 'bull' ? tw`text-green-400` : tw`text-red-400`) : tw`text-white`]}>
+                        <motion.p 
+                          animate={isWinner ? { scale: [1, 1.1, 1] } : {}}
+                          transition={{ duration: 2, repeat: Infinity }}
+                          className={`text-xs font-black ${isWinner ? (side === 'bull' ? 'text-green-400' : 'text-red-400') : 'text-white'}`}
+                        >
                           {data.total}/15
-                        </Text>
-                      </View>
-                    </View>
+                        </motion.p>
+                      </div>
+                    </motion.div>
                   );
                 })}
-              </View>
+              </div>
             ) : (
               <View style={tw`bg-black/40 rounded-2xl p-4 border border-white/5 mb-6`}>
                 <View style={tw`flex-row items-center mb-4`}>
@@ -932,10 +1126,30 @@ export function LiveAnalysis() {
               </View>
             )}
 
-            <View style={tw`mb-8`}>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.8 }}
+              className="mb-8"
+            >
                <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Arbitrator Ruling</Text>
                <Text style={tw`text-white text-sm leading-5 font-medium`}>{analysis.judge.ruling}</Text>
-            </View>
+            </motion.div>
+
+            {analysis.judge.tradeDetails?.latencyAdjustedForecast && (
+               <motion.div 
+                 initial={{ opacity: 0, x: -10 }}
+                 animate={{ opacity: 1, x: 0 }}
+                 transition={{ delay: 1 }}
+                 className="mb-8 bg-[#D9B382]/10 p-4 rounded-xl border border-[#D9B382]/30 border-l-4 border-l-[#D9B382]"
+               >
+                 <div style={tw`flex-row items-center mb-2`}>
+                   <Zap size={14} color="#D9B382" style={tw`mr-2`} />
+                   <Text style={tw`text-[#D9B382] text-[10px] font-black uppercase tracking-widest`}>+90s Latency Adjusted Forecast</Text>
+                 </div>
+                 <Text style={tw`text-white text-xs leading-5 font-medium italic`}>{analysis.judge.tradeDetails.latencyAdjustedForecast}</Text>
+               </motion.div>
+            )}
 
             {/* Market Physics & Geometric Oracles Section */}
             {(analysis.structuralPriors || analysis.geometricOracles) && (
@@ -1028,7 +1242,7 @@ export function LiveAnalysis() {
               <Sparkles size={20} color="#D9B382" style={tw`mr-3`} />
               <Text style={tw`text-white font-black uppercase tracking-[2px] text-sm`}>Start New Analysis</Text>
             </TouchableOpacity>
-          </View>
+          </motion.div>
         )}
       </View>
     </ScrollView>
@@ -1037,60 +1251,54 @@ export function LiveAnalysis() {
 }
 
 const AnimatedArrows = ({ direction }: { direction: 'UP' | 'DOWN' | 'NO_TRADE' }) => {
-  const animatedValue = useRef(new Animated.Value(0)).current;
-  const screenHeight = Dimensions.get('window').height;
-  
-  useEffect(() => {
-    if (direction === 'NO_TRADE') {
-       Animated.loop(
-         Animated.sequence([
-           Animated.timing(animatedValue, { toValue: 1, duration: 1000, useNativeDriver: false }),
-           Animated.timing(animatedValue, { toValue: 0, duration: 1000, useNativeDriver: false }),
-         ])
-       ).start();
-    } else {
-       Animated.loop(
-         Animated.timing(animatedValue, {
-           toValue: 1,
-           duration: 2000,
-           easing: Easing.linear,
-           useNativeDriver: false
-         })
-       ).start();
-    }
-  }, [direction, animatedValue]);
-
-  const translateY = animatedValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: direction === 'UP' ? [screenHeight, -screenHeight] : (direction === 'DOWN' ? [-screenHeight, screenHeight] : [0, 0])
-  });
-
-  const scale = direction === 'NO_TRADE' ? animatedValue.interpolate({ inputRange: [0, 1], outputRange: [1, 1.2] }) : 1;
+  const isUp = direction === 'UP';
+  const isNeutral = direction === 'NO_TRADE';
 
   return (
-    <View style={tw`absolute inset-0 justify-center items-center pointer-events-none z-[80] overflow-hidden`}>
-      {direction === 'NO_TRADE' ? (
-        <Animated.View style={{ transform: [{ scale }], justifyContent: 'center', alignItems: 'center' }}>
-           <Text style={tw`text-9xl font-black text-yellow-500 opacity-50`}>✋</Text>
-        </Animated.View>
+    <div className="fixed inset-0 pointer-events-none z-[100] flex flex-col justify-center items-center">
+      {isNeutral ? (
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: [1, 1.1, 1], opacity: [0.4, 0.6, 0.4] }}
+          transition={{ duration: 1.5, repeat: Infinity }}
+          className="flex flex-col items-center"
+        >
+          <div className="text-9xl mb-4">✋</div>
+          <Text style={tw`text-yellow-500 font-black text-4xl uppercase tracking-[10px]`}>SIGNAL ADVISORY</Text>
+        </motion.div>
       ) : (
-        <Animated.View style={{ transform: [{ translateY }], flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', width: '100%', height: screenHeight * 2, alignItems: 'center' }}>
-          {[...Array(16)].map((_, i) => (
-            <Text key={i} style={[
-                tw`text-8xl font-black m-6`, 
-                direction === 'UP' ? tw`text-green-400` : tw`text-red-400`,
-                { 
-                  textShadowColor: direction === 'UP' ? 'rgba(74, 222, 128, 0.4)' : 'rgba(248, 113, 113, 0.4)',
-                  textShadowOffset: { width: 0, height: 0 },
-                  textShadowRadius: 20,
-                  opacity: 0.3
-                }
-            ]}>
-               {direction === 'UP' ? '▲' : '▼'}
-            </Text>
+        <div className="absolute inset-0 flex flex-row flex-wrap justify-around content-around opacity-20">
+          {[...Array(24)].map((_, i) => (
+            <motion.div
+              key={i}
+              initial={{ y: isUp ? 1000 : -1000, opacity: 0 }}
+              animate={{ 
+                y: isUp ? -1000 : 1000, 
+                opacity: [0, 0.8, 0] 
+              }}
+              transition={{ 
+                duration: 2, 
+                repeat: Infinity, 
+                delay: Math.random() * 2,
+                ease: "linear"
+              }}
+              style={{ fontSize: 120 }}
+              className={`font-black ${isUp ? 'text-green-500' : 'text-red-500'}`}
+            >
+              {isUp ? '▲' : '▼'}
+            </motion.div>
           ))}
-        </Animated.View>
+        </div>
       )}
-    </View>
+      
+      {/* Dynamic Scan Line for Added Tech Feel */}
+      {!isNeutral && (
+        <motion.div
+          animate={{ x: ['-100%', '100%'] }}
+          transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+          className={`absolute inset-y-0 w-1 ${isUp ? 'bg-green-500 shadow-[0_0_20px_#22C55E]' : 'bg-red-500 shadow-[0_0_20px_#EF4444]'} opacity-30`}
+        />
+      )}
+    </div>
   );
 };

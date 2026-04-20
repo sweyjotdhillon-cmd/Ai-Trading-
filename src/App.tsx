@@ -11,6 +11,7 @@ import {
   Platform
 } from 'react-native';
 import { Settings, LogIn, Activity, LayoutGrid, History as HistoryIcon } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 import { LiveAnalysis } from './components/LiveAnalysis';
 import { StatisticsView } from './components/StatisticsView';
@@ -151,7 +152,7 @@ function App() {
         <View style={styles.headerRight}>
           <TouchableOpacity 
             style={styles.headerAction}
-            onPress={() => setShowSystemSettings(true)}
+            onPress={() => setTimeout(() => setShowSystemSettings(true), 10)}
           >
             <Settings color="#8E9299" size={20} />
           </TouchableOpacity>
@@ -170,18 +171,38 @@ function App() {
 
       {/* Main Content Area */}
       <View style={styles.main}>
-        {activeTab === 'live' ? (
-          <LiveAnalysis />
-        ) : (
-          <StatisticsView />
-        )}
+        <AnimatePresence mode="wait">
+          {activeTab === 'live' ? (
+            <motion.div
+              key="live"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={{ duration: 0.2 }}
+              style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, flexGrow: 1 }}
+            >
+              <LiveAnalysis />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="stats"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={{ duration: 0.2 }}
+              style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, flexGrow: 1 }}
+            >
+              <StatisticsView />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </View>
 
       {/* Modern Android Bottom Bar */}
       <View style={styles.bottomBar}>
         <TouchableOpacity 
           style={styles.bottomBarItem} 
-          onPress={() => setActiveTab('live')}
+          onPress={() => setTimeout(() => setActiveTab('live'), 10)}
         >
           <View style={[styles.bottomBarIcon, activeTab === 'live' && styles.bottomBarIconActive]}>
             <LayoutGrid color={activeTab === 'live' ? '#1A1308' : '#8E9299'} size={22} />
@@ -191,7 +212,7 @@ function App() {
         
         <TouchableOpacity 
           style={styles.bottomBarItem} 
-          onPress={() => setActiveTab('stats')}
+          onPress={() => setTimeout(() => setActiveTab('stats'), 10)}
         >
           <View style={[styles.bottomBarIcon, activeTab === 'stats' && styles.bottomBarIconActive]}>
             <HistoryIcon color={activeTab === 'stats' ? '#1A1308' : '#8E9299'} size={22} />
@@ -211,7 +232,9 @@ function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    height: '100%',
     backgroundColor: '#0A0B0E',
+    overflow: 'hidden',
   },
   loadingContainer: {
     flex: 1,
@@ -379,6 +402,10 @@ const styles = StyleSheet.create({
   },
   main: {
     flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    minHeight: 0,
   },
   centerContent: {
     flex: 1,

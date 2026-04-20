@@ -23,11 +23,11 @@
 }
 
 html, body, #root {
-  height: 100% !important;
-  width: 100% !important;
+  height: 100dvh !important;
+  width: 100vw !important;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: hidden; /* Back to hidden, but we'll ensure inner scrolling */
   display: flex !important;
   flex-direction: column !important;
   background-color: #05070A !important;

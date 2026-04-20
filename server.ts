@@ -546,6 +546,46 @@ BOUNDARY REVERSAL BIAS: ${boundaryResult.label} -> Bull: +${boundaryResult.bullP
     }
   });
 
+  app.post("/api/scout", async (req, res) => {
+    try {
+      const { image, anchorThesis } = req.body;
+      if (!image || !anchorThesis) return res.status(400).json({ error: "Missing image or thesis" });
+      
+      const prompt = `
+      You are the LIVE TICK SCOUT. 
+      ANCHOR THESIS (The Macro AI Decision):
+      ${anchorThesis}
+      
+      Look closely at the NEWEST candles on the right edge of this live feed.
+      Does the new price action support or break the anchor thesis?
+      Respond ONLY with a valid JSON object:
+      {
+        "action": "HOLD" | "BUILD" | "BAIL",
+        "reason": "1 strict sentence explaining live candle movement"
+      }
+      `;
+
+      // We use the same model, but skipping heavy computation.
+      // (Using standard GPT-4o structure which processes simple bounding very fast).
+      const rawResponse = await callModel({
+        model: process.env.VISION_MODEL || "gpt-4o",
+        prompt,
+        image,
+        jsonMode: true
+      });
+
+      let cleanRaw = rawResponse.replace(/```json|```/g, '').trim();
+      const start = cleanRaw.indexOf('{');
+      const end = cleanRaw.lastIndexOf('}');
+      if (start !== -1 && end !== -1) cleanRaw = cleanRaw.substring(start, end + 1);
+
+      res.json(JSON.parse(cleanRaw));
+    } catch (error: any) {
+      console.error("Scout error:", error);
+      res.status(500).json({ error: "Scout processing failed" });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");

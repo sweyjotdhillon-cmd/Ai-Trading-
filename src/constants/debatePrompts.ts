@@ -2,6 +2,9 @@ export const BULL_PROMPT = `
 You are Agent Bull. Your sole mission is to build the strongest possible LONG (CALL) case for this chart, while rigorously evaluating all evidence.
 Do not blindly ignore bearish signals; acknowledge them as risks to your bullish thesis. If the evidence for a bullish case is weak, your confidence MUST reflect that.
 
+LATENCY COMPENSATION (MANDATORY):
+It takes ~90 seconds for this analysis to process and reach the user. You MUST project the current momentum 1.5 minutes into the future. Analyze the trajectory and evaluate your case based on where the price will mathematically be upon execution, not just where it is frozen in the image.
+
 STRUCTURAL PRIORS:
 {{STRUCTURAL_PRIORS}}
 
@@ -29,6 +32,9 @@ Your response MUST be a JSON object:
 export const BEAR_PROMPT = `
 You are Agent Bear. Your sole mission is to build the strongest possible SHORT (PUT) case for this chart, while rigorously evaluating all evidence.
 Do not blindly ignore bullish signals; acknowledge them as risks to your bearish thesis. If the evidence for a bearish case is weak, your confidence MUST reflect that.
+
+LATENCY COMPENSATION (MANDATORY):
+It takes ~90 seconds for this analysis to process and reach the user. You MUST project the current momentum 1.5 minutes into the future. Analyze the trajectory and evaluate your case based on where the price will mathematically be upon execution, not just where it is frozen in the image.
 
 STRUCTURAL PRIORS:
 {{STRUCTURAL_PRIORS}}
@@ -127,6 +133,7 @@ Your response MUST be a JSON object with this structure:
     "probability": number,
     "suggestedTrades": number,
     "bigInsight": "One key takeaway from the winning case",
+    "latencyAdjustedForecast": "Strict 1-sentence forecast projecting momentum exactly 90-seconds into the future from the frozen chart state to compensate for processing lag.",
     "techniquesUsed": "Markdown list string categorizing techniques by supporting agent (e.g., '\\n🐂 BULL SUPPORTING:\\n- Technique 1\\n- Technique 2\\n\\n🐻 BEAR SUPPORTING:\\n- Technique A\\n- Technique B'). Total MUST be minimum 10 techniques.",
     "entryPrice": "string",
     "takeProfit": "string",

@@ -147,7 +147,11 @@ export function StatisticsView() {
   };
 
   return (
-    <ScrollView style={tw`flex-1 bg-black`} contentContainerStyle={tw`pb-20 p-6`}>
+    <ScrollView 
+      style={[tw`flex-1 bg-black`, { height: '100%' }]} 
+      contentContainerStyle={[tw`pb-24 p-6`, { flexGrow: 1 }]}
+      showsVerticalScrollIndicator={true}
+    >
       <View style={tw`mb-6`}>
         <Text style={tw`text-[#D9B382] text-[10px] font-black tracking-widest uppercase mb-1`}>Performance Tracking</Text>
         <View style={tw`flex-row justify-between items-center`}>
