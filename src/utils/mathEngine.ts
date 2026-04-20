@@ -141,9 +141,14 @@ export function calculateHamiltonianFlow(price: number, momentum: number, steps 
  * Measures if the current move is statistically significant.
  */
 export function calculateZScoreSignificance(candles: { open: number, close: number }[]) {
-  if (candles.length < 21) return { zScore: 0, points: 0 };
+  if (candles.length < 3) return { zScore: 0, points: -1.0 }; // Cannot evaluate short data, return negative penalty
 
-  const bodies = candles.slice(-21, -1).map(c => Math.abs(c.close - c.open));
+  const lookback = Math.min(candles.length, 21);
+  const bodies = candles.slice(-lookback, -1).map(c => Math.abs(c.close - c.open));
+  
+  // If we only had 3 candles, bodies.length might be 2. Let's make sure it doesn't divide by zero
+  if (bodies.length === 0) return { zScore: 0, points: -1.0 };
+
   const currentBody = Math.abs(candles[candles.length - 1].close - candles[candles.length - 1].open);
   
   const mean = bodies.reduce((a, b) => a + b, 0) / bodies.length;
@@ -151,11 +156,14 @@ export function calculateZScoreSignificance(candles: { open: number, close: numb
   
   const zScore = stdDev === 0 ? 0 : (currentBody - mean) / stdDev;
   
-  let points = 0;
+  let points = -1.0; // Default non-zero value
   if (zScore >= 2.0) points = 2.5;
   else if (zScore >= 1.5) points = 2.0;
   else if (zScore >= 1.0) points = 1.5;
   else if (zScore >= 0.5) points = 0.5;
+  else if (zScore > 0.0) points = -0.5;
+  else if (zScore > -1.0) points = -1.5;
+  else points = -2.5;
 
   return { zScore, points };
 }
@@ -165,7 +173,7 @@ export function calculateZScoreSignificance(candles: { open: number, close: numb
  * Measures precision of reaction to S/R levels.
  */
 export function calculatePLR(currentPrice: number, levels: number[], candles: { open: number, close: number }[]) {
-  if (levels.length === 0 || candles.length === 0) return { plr: 0, points: 0, nearestLevel: null };
+  if (levels.length === 0 || candles.length === 0) return { plr: 0, points: -1.0, nearestLevel: null };
 
   const avgBody = candles.slice(-20).reduce((acc, c) => acc + Math.abs(c.close - c.open), 0) / Math.min(candles.length, 20);
   const nearestLevel = levels.reduce((prev, curr) => 
@@ -175,10 +183,13 @@ export function calculatePLR(currentPrice: number, levels: number[], candles: { 
   const distance = Math.abs(currentPrice - nearestLevel);
   const plr = 1 - (distance / (avgBody || 1e-9));
   
-  let points = 0;
+  let points = -1.0; // Default non-zero value
   if (plr >= 0.85) points = 2.5;
   else if (plr >= 0.65) points = 1.5;
   else if (plr >= 0.45) points = 0.5;
+  else if (plr >= 0.25) points = -0.5;
+  else if (plr >= 0.0) points = -1.5;
+  else points = -2.5;
 
   return { plr: Math.max(0, plr), points, nearestLevel };
 }

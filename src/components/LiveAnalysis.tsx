@@ -10,7 +10,8 @@ import {
   Platform,
   Animated,
   Easing,
-  Dimensions
+  Dimensions,
+  Modal
 } from 'react-native';
 import { 
   CheckCircle, 
@@ -25,7 +26,8 @@ import {
   Terminal,
   XCircle,
   ChevronDown,
-  Check
+  Check,
+  Zap
 } from 'lucide-react';
 import tw from 'twrnc';
 
@@ -71,11 +73,11 @@ const downscaleImage = (dataUrl: string, maxDim: number = 600): Promise<string> 
 
 export function LiveAnalysis() {
   const [stockName, setStockName] = useState('Bitcoin');
-  const [graphTimeframe, setGraphTimeframe] = useState('5m');
+  const [graphTimeframe, setGraphTimeframe] = useState('30 minutes');
   const [loading, setLoading] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
-  const [mode, setMode] = useState<'camera' | 'upload'>('upload');
+  const [mode, setMode] = useState<'camera' | 'upload'>('camera');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   // Live Trading Loop States
@@ -114,9 +116,21 @@ export function LiveAnalysis() {
   const [techFileName, setTechFileName] = useState<string | null>(null);
   const [statsFileName, setStatsFileName] = useState<string | null>(null);
 
+  const [isStatsSaved, setIsStatsSaved] = useState(false);
+
   const fileInputRef = useRef<any>(null);
   const techInputRef = useRef<any>(null);
   const statsInputRef = useRef<any>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    return () => {
+      // Cleanup camera on unmount
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
 
   const symbols = [
     { name: 'Bitcoin', icon: '₿' },
@@ -127,16 +141,56 @@ export function LiveAnalysis() {
   const timeframes = ['30 minutes', '15 minutes', '5 minutes', '3 minutes'];
   const durations = ['3m', '5m'];
 
+  const handleReset = () => {
+    setAnalysis(null);
+    setAnalysisStep(null);
+    setAnalysisError(null);
+    setSelectedImage(null);
+    setTradingPhase('IDLE');
+    setTradingDirection(null);
+    setIsStatsSaved(false);
+    setMode('camera');
+    setGraphTimeframe('30 minutes');
+    setInvestmentDuration('5m');
+    
+    setJudgeLogs({
+      judge1: { text: "Waiting to initiate...", status: 'idle' },
+      judge2: { text: "Waiting to initiate...", status: 'idle' },
+      judge3: { text: "Waiting to initiate...", status: 'idle' },
+      judge4: { text: "Waiting to initiate...", status: 'idle' },
+      system: { text: "Awaiting context...", status: 'idle' }
+    });
+
+    if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+    }
+    if (videoRef.current) {
+        videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+
+    alert("Analysis reset. Controls restored to defaults.");
+  };
+
   const startCamera = async () => {
     if (Platform.OS === 'web') {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            facingMode: "environment",
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          } 
+        });
+        streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
         setIsCameraActive(true);
-      } catch {
-        alert("Camera access denied or not available.");
+      } catch (err) {
+        console.error("Camera access error:", err);
+        alert("Camera access denied or not available. Please ensure you have granted permission.");
       }
     } else {
       alert("Live camera is supported on web interface only via standard browser APIs.");
@@ -144,8 +198,12 @@ export function LiveAnalysis() {
   };
 
   const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      videoRef.current.srcObject.getTracks().forEach((track: any) => track.stop());
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track: any) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
     setIsCameraActive(false);
   };
@@ -230,25 +288,35 @@ export function LiveAnalysis() {
     }
   };
 
-  const saveToStats = (analysisData: any) => {
+  const saveToStats = (analysisData: any, outcome: 'WIN' | 'LOSS') => {
     try {
       const entryIdx = statsData.length + 1;
-      const profit = (Number(profitabilityPercent) / 100) * Number(investmentAmount);
+      const profitPct = Number(profitabilityPercent);
+      const investAmt = Number(investmentAmount);
+      const potentialProfit = (profitPct / 100) * investAmt;
       
+      const now = new Date();
+      const dateStr = now.toLocaleDateString();
+      const timeStr = now.toLocaleTimeString();
+
       const newEntry = {
         id: entryIdx,
         sessionName: `${stockName.replace('/', '_')}_${entryIdx}`,
         sessionIndex: sessionIndex,
-        timestamp: new Date().toISOString(),
+        timestamp: now.toISOString(),
+        date: dateStr,
+        time: timeStr,
         stock: stockName,
         timeframe: graphTimeframe,
         duration: investmentDuration,
-        investment: Number(investmentAmount),
-        profitPotential: profit,
-        lossPotential: Number(investmentAmount),
+        investment: investAmt,
+        profitPercentage: profitPct,
+        profitPotential: potentialProfit,
+        lossPotential: investAmt,
         signal: analysisData.judge.winner === 'BULL' ? 'CALL' : (analysisData.judge.winner === 'BEAR' ? 'PUT' : 'WAIT'),
-        result: Math.random() > 0.5 ? 'WIN' : 'LOSS',
-        profitAmount: analysisData.judge.winner === 'BULL' ? 85 : (analysisData.judge.winner === 'BEAR' ? 85 : 0),
+        result: outcome,
+        exactProfit: outcome === 'WIN' ? potentialProfit : -investAmt,
+        profitAmount: outcome === 'WIN' ? potentialProfit : -investAmt,
         reasoning: analysisData.judge.ruling,
         confidence: analysisData.judge.finalConfidence,
         totalScore: analysisData.judge.totalScore,
@@ -258,6 +326,7 @@ export function LiveAnalysis() {
       
       const updatedStats = [...statsData, newEntry];
       setStatsData(updatedStats);
+      setIsStatsSaved(true);
 
       // Also persist to current session storage for the local view
       const existing = sessionStorage.getItem('stats_surface_data');
@@ -267,8 +336,11 @@ export function LiveAnalysis() {
       }
       localStats.stats.push(newEntry as never);
       sessionStorage.setItem('stats_surface_data', JSON.stringify(localStats));
+      
+      alert(`Trade result recorded as ${outcome}. Stat entry #${entryIdx} created.`);
     } catch (err) {
       console.error("Failed to save stats:", err);
+      alert("Error saving trade result.");
     }
   };
 
@@ -308,11 +380,13 @@ export function LiveAnalysis() {
       return;
     }
 
-    setLoading(true);
-    setAnalysisError(null);
-    setAnalysis(null);
-    setTradingPhase('ANALYSING_DIRECTION');
-    setAnalysisStep(`SYNCHRONIZING ${techniquesList.length} TECHNIQUES...`);
+    // Small delay to allow the native touch event to complete on web
+    setTimeout(async () => {
+      setLoading(true);
+      setAnalysisError(null);
+      setAnalysis(null);
+      setTradingPhase('ANALYSING_DIRECTION');
+      setAnalysisStep(`SYNCHRONIZING ${techniquesList.length} TECHNIQUES...`);
 
     // Optimize image for transmission (web canvas resize)
     const optimizedImage = await downscaleImage(finalImageToAnalyze);
@@ -422,25 +496,44 @@ export function LiveAnalysis() {
         });
         
         setAnalysisStep(`Analysis Complete: ${data.techUsedCount}/${techniquesList.length} Techniques Found`);
-        const direction = data.judge.winner === 'BULL' ? 'UP' : (data.judge.winner === 'BEAR' ? 'DOWN' : 'NO_TRADE');
+        
+        // Robust Direction Detection
+        const rawWinner = (data.judge.winner || '').toUpperCase();
+        const rawSignal = (data.judge.tradeDetails?.signal || '').toUpperCase();
+        
+        let direction: 'UP' | 'DOWN' | 'NO_TRADE' = 'NO_TRADE';
+        
+        if (rawWinner === 'BULL' || rawSignal === 'CALL' || rawSignal === 'UP') {
+          direction = 'UP';
+        } else if (rawWinner === 'BEAR' || rawSignal === 'PUT' || rawSignal === 'DOWN') {
+          direction = 'DOWN';
+        }
 
         setTradingDirection(direction);
-        setTradingPhase('WAITING_FOR_ENTRY');
-        setAnalysisStep(direction === 'NO_TRADE' ? 'CONFIRMING NO-TRADE SIGNAL...' : 'HUNTING PERFECT ENTRY POINT...');
-
-        await new Promise(r => setTimeout(r, 3000));
-        setTradingPhase('ENTRY_CONFIRMED');
-        setAnalysisStep('EXECUTE NOW!');
+        
+        if (mode === 'camera') {
+          // Live Analysis: Arrow phase then Entry phase
+          setTradingPhase('WAITING_FOR_ENTRY');
+          setAnalysisStep(direction === 'NO_TRADE' ? 'CONFIRMING NO-TRADE SIGNAL...' : 'HUNTING PERFECT ENTRY POINT...');
+          
+          await new Promise(r => setTimeout(r, 4000)); // Show arrows for 4 seconds
+          setTradingPhase('ENTRY_CONFIRMED');
+          setAnalysisStep('EXECUTE NOW!');
+        } else {
+          // Screenshot Analysis: Direct to Entry phase
+          setTradingPhase('ENTRY_CONFIRMED');
+          setAnalysisStep(direction === 'NO_TRADE' ? 'SIGNAL ABORTED' : 'SIGNAL CONFIRMED - EXECUTE NOW!');
+        }
+        
         setAnalysis(data);
-        saveToStats(data);
-        setTimeout(() => handleDownloadStats(), 500);
+        setIsStatsSaved(false); // Reset stats saved state for new analysis
         
         // Final reset after some time
         setTimeout(() => {
            setTradingPhase('IDLE');
            setAnalysisStep(null);
            setTradingDirection(null);
-        }, 5000);
+        }, 6000);
 
       } else {
         throw new Error("Analysis failed. Arbitrator did not return a valid decision.");
@@ -457,25 +550,36 @@ export function LiveAnalysis() {
       setTradingPhase('IDLE');
       setLoading(false);
     }
+    }, 10);
   };
 
 
   return (
     <View style={tw`flex-1 bg-black overflow-hidden relative`}>
-      {/* Full Screen Overlays */}
+      {/* Full Screen High-Intensity Overlays */}
+      <Modal
+        visible={tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection}
+        transparent={true}
+        animationType="fade"
+      >
+        <View style={[
+            tw`flex-1 justify-center items-center`, 
+            tradingDirection === 'UP' ? tw`bg-green-500` : (tradingDirection === 'DOWN' ? tw`bg-red-500` : tw`bg-yellow-600`)
+        ]}>
+           <View style={tw`items-center px-6`}>
+             <Text style={tw`text-white font-[Anton] text-8xl leading-[0.85] uppercase text-center mb-4`}>
+                {tradingDirection === 'UP' ? 'PULL UP' : (tradingDirection === 'DOWN' ? 'PULL DOWN' : 'NO TRADE')}
+             </Text>
+             <View style={tw`h-1 w-24 bg-white/40 mb-4`} />
+             <Text style={tw`text-white/90 font-black text-4xl tracking-tighter uppercase text-center`}>
+                {tradingDirection === 'UP' ? 'EXECUTE NOW' : (tradingDirection === 'DOWN' ? 'EXECUTE NOW' : 'ABORT SIGNAL')}
+             </Text>
+           </View>
+        </View>
+      </Modal>
+
       {tradingPhase === 'WAITING_FOR_ENTRY' && tradingDirection && (
           <AnimatedArrows direction={tradingDirection} />
-      )}
-      
-      {tradingPhase === 'ENTRY_CONFIRMED' && tradingDirection && (
-          <View style={[
-              tw`absolute inset-0 z-[100] justify-center items-center`, 
-              tradingDirection === 'UP' ? tw`bg-green-500` : (tradingDirection === 'DOWN' ? tw`bg-red-500` : tw`bg-yellow-600`)
-          ]}>
-             <Text style={tw`text-white font-black text-6xl tracking-tighter uppercase text-center`}>
-                {tradingDirection === 'UP' ? 'PULL UP\nNOW!' : (tradingDirection === 'DOWN' ? 'PULL DOWN\nNOW!' : 'NO TRADE\nABORT!')}
-             </Text>
-          </View>
       )}
 
       <ScrollView style={tw`flex-1 bg-black`}>
@@ -678,59 +782,61 @@ export function LiveAnalysis() {
             <View style={tw`flex-row items-center justify-between mb-4 border-b border-white/10 pb-3`}>
               <View style={tw`flex-row items-center gap-2`}>
                  <ActivityIndicator color="#D9B382" size="small" />
-                 <Text style={tw`text-[#D9B382] font-black uppercase tracking-widest text-[10px]`}>
+                 <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 10, color: '#D9B382' }]}>
                    {analysisStep || 'Live Neural Debate Active'}
                  </Text>
               </View>
-              <Text style={tw`text-[#8B95B0] text-[8px] tracking-widest uppercase`}>Simultaneous execution</Text>
+              <Text style={[tw`tracking-widest uppercase`, { fontSize: 8, color: '#8B95B0' }]}>Simultaneous execution</Text>
             </View>
             <View style={tw`gap-3`}>
-              <View style={tw`bg-black/60 p-3 rounded-lg border border-[#D9B382]/30 flex-row items-center justify-between`}>
+              <View style={[tw`bg-black/60 p-3 rounded-lg flex-row items-center justify-between border`, { borderColor: 'rgba(232, 121, 249, 0.3)' }]}>
                 <View style={tw`flex-1`}>
-                  <Text style={tw`text-[10px] font-black text-[#D9B382] uppercase tracking-widest mb-1`}>System (Conceptual Context)</Text>
-                  <Text style={tw`text-white text-[12px] font-black`}>{judgeLogs.system.text}</Text>
+                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#E879F9' }]}>System (Conceptual Context)</Text>
+                  <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.system.text}</Text>
                 </View>
-                {judgeLogs.system.status === 'done' && <Check size={16} color="#22C55E" />}
+                {judgeLogs.system.status === 'done' && <Check size={16} color="#E879F9" />}
               </View>
 
-              <View style={tw`bg-black/60 p-3 rounded-lg border border-green-500/20 flex-row items-center justify-between`}>
+              <View style={[tw`bg-black/60 p-3 rounded-lg flex-row items-center justify-between border`, { borderColor: 'rgba(34, 211, 238, 0.3)' }]}>
                 <View style={tw`flex-1`}>
-                  <Text style={tw`text-[10px] font-black text-green-400 uppercase tracking-widest mb-1`}>Judge 1 (Bull/Momentum)</Text>
-                  <Text style={tw`text-white text-[12px] font-black`}>{judgeLogs.judge1.text}</Text>
+                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#22D3EE' }]}>Judge 1 (Bull/Momentum)</Text>
+                  <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.judge1.text}</Text>
                 </View>
-                {judgeLogs.judge1.status === 'done' && <Check size={16} color="#22C55E" />}
+                {judgeLogs.judge1.status === 'done' && <Check size={16} color="#22D3EE" />}
               </View>
 
-              <View style={tw`bg-black/60 p-3 rounded-lg border border-red-500/20 flex-row items-center justify-between`}>
+              <View style={[tw`bg-black/60 p-3 rounded-lg flex-row items-center justify-between border`, { borderColor: 'rgba(251, 146, 60, 0.3)' }]}>
                 <View style={tw`flex-1`}>
-                  <Text style={tw`text-[10px] font-black text-red-500 uppercase tracking-widest mb-1`}>Judge 2 (Bear/Resistance)</Text>
-                  <Text style={tw`text-white text-[12px] font-black`}>{judgeLogs.judge2.text}</Text>
+                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#FB923C' }]}>Judge 2 (Bear/Resistance)</Text>
+                  <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.judge2.text}</Text>
                 </View>
-                {judgeLogs.judge2.status === 'done' && <Check size={16} color="#22C55E" />}
+                {judgeLogs.judge2.status === 'done' && <Check size={16} color="#FB923C" />}
               </View>
 
-              <View style={tw`bg-black/60 p-3 rounded-lg border border-yellow-500/20 flex-row items-center justify-between`}>
+              <View style={[tw`bg-black/60 p-3 rounded-lg flex-row items-center justify-between border`, { borderColor: 'rgba(163, 230, 53, 0.3)' }]}>
                 <View style={tw`flex-1`}>
-                  <Text style={tw`text-[10px] font-black text-yellow-400 uppercase tracking-widest mb-1`}>Judge 3 (Skeptic/Risk)</Text>
-                  <Text style={tw`text-white text-[12px] font-black`}>{judgeLogs.judge3.text}</Text>
+                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#A3E635' }]}>Judge 3 (Skeptic/Risk)</Text>
+                  <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.judge3.text}</Text>
                 </View>
-                {judgeLogs.judge3.status === 'done' && <Check size={16} color="#22C55E" />}
+                {judgeLogs.judge3.status === 'done' && <Check size={16} color="#A3E635" />}
               </View>
 
-              <View style={tw`bg-black/60 p-3 rounded-lg border border-blue-500/20 flex-row items-center justify-between`}>
+              <View style={[tw`bg-black/60 p-3 rounded-lg flex-row items-center justify-between border`, { borderColor: 'rgba(129, 140, 248, 0.3)' }]}>
                 <View style={tw`flex-1`}>
-                  <Text style={tw`text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1`}>Judge 4 (Mirror/Symmetry)</Text>
-                  <Text style={tw`text-white text-[12px] font-black`}>{judgeLogs.judge4.text}</Text>
+                  <Text style={[tw`font-black uppercase tracking-widest mb-1`, { fontSize: 10, color: '#818CF8' }]}>Judge 4 (Mirror/Symmetry)</Text>
+                  <Text style={[tw`font-black`, { fontSize: 12, color: '#FFFFFF' }]}>{judgeLogs.judge4.text}</Text>
                 </View>
-                {judgeLogs.judge4.status === 'done' && <Check size={16} color="#22C55E" />}
+                {judgeLogs.judge4.status === 'done' && <Check size={16} color="#818CF8" />}
               </View>
             </View>
           </View>
         ) : (
           <TouchableOpacity
-            onPress={handleAnalyze}
+            onPress={() => {
+              closePickers();
+              handleAnalyze();
+            }}
             disabled={(mode === 'upload' && !selectedImage) || (mode === 'camera' && !isCameraActive)}
-            onPressIn={closePickers}
             style={[
               tw`h-14 rounded-xl items-center justify-center mt-4`,
               ((mode === 'upload' && !selectedImage) || (mode === 'camera' && !isCameraActive)) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`
@@ -782,28 +888,92 @@ export function LiveAnalysis() {
                <Text style={tw`text-[#D9B382] font-mono text-xs mb-2`}>{analysis.judge.formattedReport}</Text>
             </View>
 
-            <View style={tw`bg-black/40 rounded-2xl p-4 border border-white/5 mb-6`}>
-               <View style={tw`flex-row items-center mb-4`}>
-                  <Terminal size={14} color="#D9B382" style={tw`mr-2`} />
-                  <Text style={tw`text-[#D9B382] text-[10px] font-black uppercase tracking-widest`}>Judge Deliberations</Text>
-               </View>
-               {[
-                 { name: 'Judge 1 (Reasoning)', color: '#D9B382', text: `Score: ${analysis.judge.j1Score}/5. Analysis based on agent arguments and structural priors.` },
-                 { name: 'Judge 2 (Vehicle)', color: '#D9B382', text: `Score: ${analysis.judge.j2Score}/5. Analysis of trend momentum and bullish/bearish vehicles.` },
-                 { name: 'Judge 3 (Z-Score)', color: '#D9B382', text: `Score: ${analysis.judge.j3Score}/2.5. Statistical significance of recent candle movements.` },
-                 { name: 'Judge 4 (PLR)', color: '#D9B382', text: `Score: ${analysis.judge.j4Score}/2.5. Price interaction proximity to key levels.` }
-               ].map((j, i) => (
-                 <View key={i} style={tw`mb-4 last:mb-0`}>
-                    <Text style={[tw`text-[9px] font-black uppercase mb-1`, { color: j.color }]}>{j.name}</Text>
-                    <Text style={tw`text-white text-[11px] leading-4`}>{j.text}</Text>
-                 </View>
-               ))}
-            </View>
+            {/* Dynamic Comparison Scorecards */}
+            {analysis.judge.cases ? (
+              <View style={tw`flex-row gap-3 mb-6`}>
+                {['bull', 'bear'].map((side) => {
+                  const data = analysis.judge.cases[side];
+                  const isWinner = side.toUpperCase() === analysis.judge.winner.toUpperCase();
+                  return (
+                    <View key={side} style={[
+                      tw`flex-1 bg-black/40 rounded-2xl p-4 border`,
+                      isWinner ? (side === 'bull' ? tw`border-green-500/40` : tw`border-red-500/40`) : tw`border-white/5`
+                    ]}>
+                      <View style={tw`flex-row items-center justify-between mb-3`}>
+                        <Text style={[tw`text-[10px] font-black uppercase tracking-widest`, side === 'bull' ? tw`text-green-400` : tw`text-red-400`]}>
+                          {side === 'bull' ? 'Case 1: Bull' : 'Case 2: Bear'}
+                        </Text>
+                        {isWinner && <View style={tw`w-1.5 h-1.5 rounded-full ${side === 'bull' ? 'bg-green-500' : 'bg-red-500'}`} />}
+                      </View>
+                      
+                      {[
+                        { label: 'J1 reasoning', val: data.j1, max: 5 },
+                        { label: 'J2 vehicle', val: data.j2, max: 5 },
+                        { label: 'J3 z-score', val: data.j3, max: 2.5 },
+                        { label: 'J4 proximity', val: data.j4, max: 2.5 },
+                      ].map((j, i) => (
+                        <View key={i} style={tw`flex-row justify-between items-center mb-1.5`}>
+                          <Text style={tw`text-[8px] text-[#8B95B0] uppercase font-bold`}>{j.label}</Text>
+                          <Text style={tw`text-white text-[9px] font-mono`}>{j.val}/{j.max}</Text>
+                        </View>
+                      ))}
+                      
+                      <View style={tw`mt-3 pt-3 border-t border-white/5 flex-row justify-between items-center`}>
+                        <Text style={tw`text-[8px] font-black text-[#D9B382] uppercase`}>Total</Text>
+                        <Text style={[tw`text-xs font-black`, isWinner ? (side === 'bull' ? tw`text-green-400` : tw`text-red-400`) : tw`text-white`]}>
+                          {data.total}/15
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={tw`bg-black/40 rounded-2xl p-4 border border-white/5 mb-6`}>
+                <View style={tw`flex-row items-center mb-4`}>
+                    <Terminal size={14} color="#D9B382" style={tw`mr-2`} />
+                    <Text style={tw`text-[#D9B382] text-[10px] font-black uppercase tracking-widest`}>Judge Deliberations</Text>
+                </View>
+                {[
+                  { name: 'Judge 1 (Reasoning)', color: '#D9B382', text: `Score: ${analysis.judge.j1Score}/5. Analysis based on agent arguments and structural priors.` },
+                  { name: 'Judge 2 (Vehicle)', color: '#D9B382', text: `Score: ${analysis.judge.j2Score}/5. Analysis of trend momentum and bullish/bearish vehicles.` },
+                  { name: 'Judge 3 (Z-Score)', color: '#D9B382', text: `Score: ${analysis.judge.j3Score}/2.5. Statistical significance of recent candle movements.` },
+                  { name: 'Judge 4 (PLR)', color: '#D9B382', text: `Score: ${analysis.judge.j4Score}/2.5. Price interaction proximity to key levels.` }
+                ].map((j, i) => (
+                  <View key={i} style={tw`mb-4 last:mb-0`}>
+                      <Text style={[tw`text-[9px] font-black uppercase mb-1`, { color: j.color }]}>{j.name}</Text>
+                      <Text style={tw`text-white text-[11px] leading-4`}>{j.text}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
 
             <View style={tw`mb-8`}>
                <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Arbitrator Ruling</Text>
                <Text style={tw`text-white text-sm leading-5 font-medium`}>{analysis.judge.ruling}</Text>
             </View>
+
+            {/* Market Physics & Geometric Oracles Section */}
+            {(analysis.structuralPriors || analysis.geometricOracles) && (
+              <View style={tw`bg-black/20 rounded-2xl p-4 border border-blue-500/10 mb-8`}>
+                <View style={tw`flex-row items-center mb-3`}>
+                  <Zap size={14} color="#60A5FA" style={tw`mr-2`} />
+                  <Text style={tw`text-[#60A5FA] text-[10px] font-black uppercase tracking-widest`}>Market Physics & Geometric Oracles</Text>
+                </View>
+                {analysis.structuralPriors && (
+                  <View style={tw`mb-4`}>
+                    <Text style={tw`text-[8px] font-black text-[#8B95B0] uppercase mb-1.5`}>Structural Priors (Market Gates)</Text>
+                    <Text style={tw`text-[#60A5FA] text-[10px] leading-4 font-bold`}>{analysis.structuralPriors}</Text>
+                  </View>
+                )}
+                {analysis.geometricOracles && (
+                  <View>
+                    <Text style={tw`text-[8px] font-black text-[#8B95B0] uppercase mb-1.5`}>Geometric Features (Deep Graph)</Text>
+                    <Text style={tw`text-white text-[10px] leading-4 opacity-80`}>{analysis.geometricOracles}</Text>
+                  </View>
+                )}
+              </View>
+            )}
 
             {analysis.judge.tradeDetails?.techniquesUsed && (
               <View style={tw`mb-8`}>
@@ -825,15 +995,54 @@ export function LiveAnalysis() {
               </View>
             </View>
 
-            <TouchableOpacity
-              onPress={handleDownloadStats}
-              style={tw`bg-[#D9B382]/20 border border-[#D9B382] p-4 rounded-2xl flex-row items-center justify-center shadow-lg`}
+            {/* Manual Trade Result Declaration */}
+            <View style={tw`mt-4 bg-black/40 rounded-2xl p-6 border border-[#D9B382]/30 shadow-lg`}>
+                <Text style={tw`text-[#D9B382] font-black uppercase tracking-[2px] text-xs mb-4 text-center`}>
+                    {isStatsSaved ? 'TRADE RESULT FINALIZED' : 'DECLARE TRADE OUTCOME'}
+                </Text>
+                
+                {!isStatsSaved ? (
+                  <View style={tw`flex-row gap-4`}>
+                    <TouchableOpacity 
+                      onPress={() => saveToStats(analysis, 'WIN')}
+                      style={tw`flex-1 bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`}
+                    >
+                      <CheckCircle size={18} color="white" style={tw`mr-2`} />
+                      <Text style={tw`text-white font-black uppercase text-sm`}>WIN (PROFIT)</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      onPress={() => saveToStats(analysis, 'LOSS')}
+                      style={tw`flex-1 bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`}
+                    >
+                      <XCircle size={18} color="white" style={tw`mr-2`} />
+                      <Text style={tw`text-white font-black uppercase text-sm`}>LOSS</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={tw`items-center`}>
+                    <View style={tw`bg-white/10 px-4 py-2 rounded-lg mb-4 flex-row items-center`}>
+                      <Check size={16} color="#22C55E" style={tw`mr-2`} />
+                      <Text style={tw`text-white text-xs font-bold`}>Entry added to statistics sequence.</Text>
+                    </View>
+                    
+                    <TouchableOpacity 
+                      onPress={handleDownloadStats}
+                      style={tw`bg-[#D9B382] h-12 px-8 rounded-xl items-center justify-center flex-row`}
+                    >
+                      <Download size={18} color="#1A1308" style={tw`mr-2`} />
+                      <Text style={tw`text-[#1A1308] font-black uppercase text-sm`}>Download Updated Stats</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+            </View>
+
+            <TouchableOpacity 
+              onPress={handleReset}
+              style={tw`mt-6 bg-[#1A1308] border border-white/10 h-14 rounded-2xl items-center justify-center flex-row shadow-2xl`}
             >
-              <Download size={20} color="#D9B382" style={tw`mr-3`} />
-              <View>
-                 <Text style={tw`text-[#D9B382] font-black uppercase tracking-widest text-xs`}>Export Updated Stats</Text>
-                 <Text style={tw`text-[#D9B382] text-[9px]`}>Next: {stockName.replace('/', '_')}_{sessionIndex}.json</Text>
-              </View>
+              <Sparkles size={20} color="#D9B382" style={tw`mr-3`} />
+              <Text style={tw`text-white font-black uppercase tracking-[2px] text-sm`}>Start New Analysis</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -882,9 +1091,18 @@ const AnimatedArrows = ({ direction }: { direction: 'UP' | 'DOWN' | 'NO_TRADE' }
         </Animated.View>
       ) : (
         <Animated.View style={{ transform: [{ translateY }], flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', width: '100%', height: screenHeight * 2, alignItems: 'center' }}>
-          {[...Array(12)].map((_, i) => (
-            <Text key={i} style={[tw`text-7xl font-black m-4 opacity-50`, direction === 'UP' ? tw`text-green-500` : tw`text-red-500`]}>
-               {direction === 'UP' ? '⬆' : '⬇'}
+          {[...Array(16)].map((_, i) => (
+            <Text key={i} style={[
+                tw`text-8xl font-black m-6`, 
+                direction === 'UP' ? tw`text-green-400` : tw`text-red-400`,
+                { 
+                  textShadowColor: direction === 'UP' ? 'rgba(74, 222, 128, 0.4)' : 'rgba(248, 113, 113, 0.4)',
+                  textShadowOffset: { width: 0, height: 0 },
+                  textShadowRadius: 20,
+                  opacity: 0.3
+                }
+            ]}>
+               {direction === 'UP' ? '▲' : '▼'}
             </Text>
           ))}
         </Animated.View>

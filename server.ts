@@ -54,11 +54,11 @@ async function callModel(params: {
     payload.response_format = { type: "json_object" };
   }
 
-  let retries = 10;
-  let delay = 2500;
+  let retries = 3; // Reduced for faster failure
+  let delay = 1500; // Shorter initial delay
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 90000); // Increased to 90s for vision models
+  const timeoutId = setTimeout(() => controller.abort(), 80000); // 80s for model call
 
   while (retries >= 0) {
     try {
@@ -285,19 +285,34 @@ async function startServer() {
 
     try {
       // Create flipped image on the fly and optimize both images for VISION
-      const buffer = Buffer.from(image, 'base64');
-      const jimpImage = await Jimp.read(buffer);
+      let optimizedBase64: string;
+      let flippedImage: string;
       
-      // Resize to a max dimension to speed up vision processing (most models prefer ~1024)
-      if (jimpImage.width > 1200 || jimpImage.height > 1200) {
-        jimpImage.contain({ width: 1024, height: 1024 });
+      try {
+        const buffer = Buffer.from(image, 'base64');
+        const jimpImage = await Jimp.read(buffer);
+        console.log(`[API] Jimp processing: ${jimpImage.width}x${jimpImage.height}`);
+        
+        // Resize if too large
+        if (jimpImage.width > 800 || jimpImage.height > 800) {
+          jimpImage.contain({ width: 800, height: 800 });
+        }
+
+        // Jimp v1: set quality directly in getBuffer options if possible, or use the v1 method if available
+        // Note: jimpImage.quality(50) seems to be missing in this environment's Jimp build.
+        // We will pass the quality option to getBuffer which is supported in Jimp v1.
+        const compressedImage = await jimpImage.getBuffer("image/jpeg", { quality: 50 });
+        optimizedBase64 = compressedImage.toString('base64');
+
+        const flipped = jimpImage.clone().flip({ horizontal: true, vertical: false });
+        const flippedBuffer = await flipped.getBuffer("image/jpeg", { quality: 50 });
+        flippedImage = flippedBuffer.toString('base64');
+        console.log(`[API] Image optimization complete`);
+      } catch (jimpErr: any) {
+        console.error("[API] Jimp optimization failed, using original:", jimpErr.message);
+        optimizedBase64 = image;
+        flippedImage = image; // Fallback
       }
-
-      const compressedImage = await jimpImage.getBuffer("image/jpeg", { quality: 50 });
-      const optimizedBase64 = compressedImage.toString('base64');
-
-      const flippedBuffer = await jimpImage.flip({ horizontal: true, vertical: false }).getBuffer("image/jpeg", { quality: 50 });
-      const flippedImage = flippedBuffer.toString('base64');
 
       // Helper function for serial model calls with timeout
       const safeCall = async (prompt: string, img?: string, json: boolean = true) => {
@@ -317,11 +332,14 @@ async function startServer() {
         }
       };
 
-      // 1. Vision Extractions (Run in parallel)
-      const [visionExtractionRaw, mirrorExtractionRaw] = await Promise.all([
+      // 1. Vision Extractions (Run in parallel with allSettled for resilience)
+      const visionResults = await Promise.allSettled([
         safeCall(VISION_EXTRACTION_PROMPT, optimizedBase64),
         safeCall(VISION_EXTRACTION_PROMPT, flippedImage)
       ]);
+
+      const visionExtractionRaw = visionResults[0].status === 'fulfilled' ? visionResults[0].value : null;
+      const mirrorExtractionRaw = visionResults[1].status === 'fulfilled' ? visionResults[1].value : null;
 
       const chartData = visionExtractionRaw || "{}";
       const mirrorChartData = mirrorExtractionRaw || "{}";
@@ -354,6 +372,43 @@ async function startServer() {
       const j3Result = calculateZScoreSignificance(bodies);
       const j4Result = calculatePLR(Number(extractedData.currentPrice || 0), (extractedData.keyLevels || []).map(Number), ohlc);
 
+      // --- NEW: Calculate Advanced Metrics from Vision Data ---
+      let visionStructuralPriors = structuralPriors || "";
+      let visionGeometricOracles = geometricOracles || "";
+      
+      const priceHistory = ohlc.map(c => c.close);
+      if (priceHistory.length >= 10) {
+        const cef = calculateCEF(priceHistory, { [priceHistory[priceHistory.length-1]]: 1 });
+        const volRegime = calculateVolatilityRegime(ohlc.map((c, i) => ({
+          high: c.high, low: c.low, close: c.close, prevClose: ohlc[i-1]?.close || c.close
+        })));
+        const predictability = calculatePredictability(priceHistory);
+        const robustness = calculateRobustness(priceHistory);
+        
+        const rqa = calculateRQA(priceHistory);
+        const tda = calculatePersistentEntropy(priceHistory);
+        const flow = calculateHamiltonianFlow(priceHistory[priceHistory.length-1], priceHistory[priceHistory.length-1] - (priceHistory[priceHistory.length-2] || priceHistory[priceHistory.length-1]));
+        const perfectTrend = Array.from({ length: priceHistory.length }, (_, i) => priceHistory[0] + (priceHistory[priceHistory.length-1] - priceHistory[0]) * (i / (priceHistory.length - 1)));
+        const wasserstein = calculateWassersteinSimilarity(priceHistory, perfectTrend);
+
+        visionGeometricOracles = `
+- Wasserstein Distance to Trend Prototype: ${wasserstein.toFixed(4)}
+- RQA Determinism: ${(rqa.determinism * 100).toFixed(2)}%
+- RQA Laminarity: ${(rqa.laminarity * 100).toFixed(2)}%
+- Persistent Entropy (TDA): ${tda.entropy.toFixed(4)} (${tda.featureCount} features)
+- Hamiltonian Flow (Next 3 steps): ${flow.slice(0, 3).map(f => f.toFixed(2)).join(', ')}
+        `.trim();
+
+        visionStructuralPriors = `
+- Causal Entropic Force Direction: ${cef.predictedDirection}
+- CEF Confidence: ${(cef.confidence * 100).toFixed(2)}%
+- Market Physics: Smart money is currently gravitating toward ${cef.predictedDirection === 'UP' ? 'higher' : 'lower'} liquidity zones.
+- Volatility Regime: ${volRegime.status} (Z-Score: ${volRegime.zScore.toFixed(2)})
+- Predictability: ${predictability.type} (Ratio: ${predictability.ratios.combined?.toFixed(2)})
+- Signal Robustness: ${(robustness.robustness * 100).toFixed(0)}% Stable
+        `.trim();
+      }
+
       const statScoresContext = `
 JUDGE 3 (Z-Score) Calculated: ${j3Result.zScore.toFixed(2)} -> Points: ${j3Result.points}/2.5
 JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.points}/2.5
@@ -363,17 +418,21 @@ JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.point
       const dataContext = `\nEXTRACTED CHART DATA (JSON):\n${chartData}${techContext}${binaryContext}`;
       const mirrorDataContext = `\nEXTRACTED FLIPPED CHART DATA (JSON):\n${mirrorChartData}${techContext}${binaryContext}`;
 
-      const bullPrompt = BULL_PROMPT.replace('{{STRUCTURAL_PRIORS}}', structuralPriors) + dataContext;
-      const bearPrompt = BEAR_PROMPT.replace('{{STRUCTURAL_PRIORS}}', structuralPriors) + dataContext;
-      const skepticPrompt = SKEPTIC_PROMPT + `\nGEOMETRIC ORACLES: ${geometricOracles}` + dataContext;
+      const bullPrompt = BULL_PROMPT.replace('{{STRUCTURAL_PRIORS}}', visionStructuralPriors) + dataContext;
+      const bearPrompt = BEAR_PROMPT.replace('{{STRUCTURAL_PRIORS}}', visionStructuralPriors) + dataContext;
+      const skepticPrompt = SKEPTIC_PROMPT + `\nGEOMETRIC ORACLES: ${visionGeometricOracles}` + dataContext;
       const mirrorPrompt = MIRROR_PROMPT + mirrorDataContext + `\n\nAnalyze the data extracted from the horizontally flipped version of the chart. Output the signal as if interpreting a standard chart, returning ONLY valid JSON.`;
 
-      // Parallelize core arguments
-      const [bullRaw, bearRaw, skepticRaw] = await Promise.all([
+      // Parallelize core arguments (with allSettled for resilience)
+      const agentResults = await Promise.allSettled([
         safeCall(bullPrompt),
         safeCall(bearPrompt),
         safeCall(skepticPrompt)
       ]);
+
+      const bullRaw = agentResults[0].status === 'fulfilled' ? agentResults[0].value : null;
+      const bearRaw = agentResults[1].status === 'fulfilled' ? agentResults[1].value : null;
+      const skepticRaw = agentResults[2].status === 'fulfilled' ? agentResults[2].value : null;
 
       // Mirror call (separate to keep concurrency manageable)
       const mirrorRaw = await safeCall(mirrorPrompt);
@@ -381,11 +440,29 @@ JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.point
       const parseResponse = (raw: string | null) => {
         if (!raw) return { reasoning: "Model call failed.", flippedSignal: "UNKNOWN", skepticVerdict: "RISK UNKNOWN" };
         try {
-           // Basic clean up for accidental code block formatting
-           const cleanJson = raw.replace(/^[^{]*(\{.*\})[^}]*$/s, '$1');
-           return JSON.parse(cleanJson);
+           // Advanced clean up: remove markdown then find the first { and last }
+           const text = raw.replace(/```json|```/g, '').trim();
+           const start = text.indexOf('{');
+           const end = text.lastIndexOf('}');
+           
+           if (start !== -1 && end !== -1) {
+             const jsonStr = text.substring(start, end + 1);
+             return JSON.parse(jsonStr);
+           }
+           return JSON.parse(text);
         } catch {
-           return { reasoning: "Parsing failed.", flippedSignal: "UNKNOWN", skepticVerdict: "RISK UNKNOWN" };
+           console.error("Parse failure on raw text:", raw.substring(0, 100));
+           // Try to find the winner manually as a last resort
+           const winner = raw.match(/winner["\s:]+["']?(BULL|BEAR|NO_TRADE)["']?/i)?.[1]?.toUpperCase();
+           const signal = raw.match(/signal["\s:]+["']?(CALL|PUT|NO TRADE)["']?/i)?.[1]?.toUpperCase();
+           
+           return { 
+             reasoning: "Parsing failed, but extracted signal.", 
+             winner: winner || "NO_TRADE", 
+             tradeDetails: { signal: signal || "UNKNOWN" },
+             flippedSignal: "UNKNOWN", 
+             skepticVerdict: "RISK UNKNOWN" 
+           };
         }
       };
 
@@ -396,10 +473,10 @@ JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.point
 
       // 3. Final Arbitrator Call
       const judgePrompt = JUDGE_PROMPT
-        .replace('{{STRUCTURAL_PRIORS}}', structuralPriors)
+        .replace('{{STRUCTURAL_PRIORS}}', visionStructuralPriors)
         .replace('{{TECHNIQUES}}', techContext)
         .replace('{{STAT_SCORES}}', statScoresContext)
-        .replace('{{GEOMETRIC_ORACLES}}', geometricOracles) + 
+        .replace('{{GEOMETRIC_ORACLES}}', visionGeometricOracles) + 
         `\n\nAGENT BULL ARGUMENT: ${bull.reasoning}\n\nAGENT BEAR ARGUMENT: ${bear.reasoning}\n\nMIRROR TEST RESULT: ${mirror.flippedSignal} (${mirror.reasoning})\n\nSKEPTIC FAILURE ANALYSIS: ${skeptic.skepticVerdict} (${skeptic.failureProbability}%)\n` + 
         dataContext + statsContext;
 
@@ -417,7 +494,9 @@ JUDGE 4 (PLR) Calculated: ${j4Result.plr.toFixed(2)} -> Points: ${j4Result.point
         skeptic,
         mirror,
         judge,
-        techUsedCount
+        techUsedCount,
+        structuralPriors: visionStructuralPriors,
+        geometricOracles: visionGeometricOracles
       });
     } catch (error: any) {
       console.error("Debate error:", error);
