@@ -3,7 +3,7 @@ import {
   StyleSheet, 
   View, 
   Text, 
-  TouchableOpacity, 
+  Pressable, 
   SafeAreaView, 
   ActivityIndicator,
   Image,
@@ -90,12 +90,12 @@ function App() {
         <ActivityIndicator size="large" color="#EF4444" style={{ marginBottom: 20 }} />
         <Text style={[styles.loadingText, { color: '#EF4444', textAlign: 'center' }]}>CRITICAL ERROR</Text>
         <Text style={{ color: '#8E9299', textAlign: 'center', marginTop: 10 }}>{error}</Text>
-        <TouchableOpacity 
-          style={[styles.signInButton, { marginTop: 30, backgroundColor: '#14161C', borderColor: '#4B5570', borderWidth: 1 }]}
+        <Pressable 
+          style={({ pressed }) => [styles.signInButton, { marginTop: 30, backgroundColor: '#14161C', borderColor: '#4B5570', borderWidth: 1, opacity: pressed ? 0.7 : 1 }]}
           onPress={() => window.location.reload()}
         >
           <Text style={{ color: 'white', fontWeight: 'bold' }}>Reload Application</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     );
   }
@@ -121,13 +121,13 @@ function App() {
             <Text style={styles.authSubtitle}>
               Professional-grade market analysis on the go.
             </Text>
-            <TouchableOpacity 
-              style={styles.signInButton} 
+            <Pressable 
+              style={({ pressed }) => [styles.signInButton, { opacity: pressed ? 0.7 : 1 }]} 
               onPress={handleSignIn}
             >
               <LogIn color="white" size={20} style={{marginRight: 10}} />
               <Text style={styles.signInButtonText}>Sign in with Google</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
       </SafeAreaView>
@@ -150,14 +150,14 @@ function App() {
           </View>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity 
-            style={styles.headerAction}
+          <Pressable 
+            style={({ pressed }) => [styles.headerAction, { opacity: pressed ? 0.7 : 1 }]}
             onPress={() => setTimeout(() => setShowSystemSettings(true), 10)}
           >
             <Settings color="#8E9299" size={20} />
-          </TouchableOpacity>
+          </Pressable>
           
-          <TouchableOpacity onPress={handleLogOut}>
+          <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })} onPress={handleLogOut}>
             {user.photoURL ? (
               <Image source={{ uri: user.photoURL }} style={styles.profileImage} />
             ) : (
@@ -165,7 +165,7 @@ function App() {
                 <LogIn color="#1A1308" size={16} />
               </View>
             )}
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </View>
 
@@ -200,25 +200,25 @@ function App() {
 
       {/* Modern Android Bottom Bar */}
       <View style={styles.bottomBar}>
-        <TouchableOpacity 
-          style={styles.bottomBarItem} 
+        <Pressable 
+          style={({ pressed }) => [styles.bottomBarItem, { opacity: pressed ? 0.7 : 1 }]} 
           onPress={() => setTimeout(() => setActiveTab('live'), 10)}
         >
           <View style={[styles.bottomBarIcon, activeTab === 'live' && styles.bottomBarIconActive]}>
             <LayoutGrid color={activeTab === 'live' ? '#1A1308' : '#8E9299'} size={22} />
           </View>
           <Text style={[styles.bottomBarText, activeTab === 'live' && styles.bottomBarTextActive]}>Console</Text>
-        </TouchableOpacity>
+        </Pressable>
         
-        <TouchableOpacity 
-          style={styles.bottomBarItem} 
+        <Pressable 
+          style={({ pressed }) => [styles.bottomBarItem, { opacity: pressed ? 0.7 : 1 }]} 
           onPress={() => setTimeout(() => setActiveTab('stats'), 10)}
         >
           <View style={[styles.bottomBarIcon, activeTab === 'stats' && styles.bottomBarIconActive]}>
             <HistoryIcon color={activeTab === 'stats' ? '#1A1308' : '#8E9299'} size={22} />
           </View>
           <Text style={[styles.bottomBarText, activeTab === 'stats' && styles.bottomBarTextActive]}>History</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <SystemSettingsModal 

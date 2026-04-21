@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { 
   View, 
   Text, 
-  TouchableOpacity, 
+  Pressable, 
   ScrollView, 
   ActivityIndicator, 
   TextInput,
@@ -33,6 +33,7 @@ const JUDGE_TASKS = {
   judge1: ["Scanning support nodes...", "Evaluating volume nodes...", "Mapping price patterns...", "Analyzing breakouts...", "Finalizing Bullish Case..."],
   judge2: ["Locating resistance zones...", "Analyzing selling pressure...", "Checking candle patterns...", "Projecting crash vectors...", "Finalizing Bearish Case..."],
   judge3: ["Searching for local traps...", "Calculating failure risk...", "Checking volume leaks...", "Scanning wick rejections...", "Finalizing Risk Verdict..."],
+  judge4: ["Locating chart boundaries...", "Detecting trend extremes...", "Scanning for exhaustion...", "Calculating reversal probability...", "Finalizing Boundary Verdict..."],
   system: ["Syncing live vision feed...", "Extracting OHLC data...", "Computing math oracles...", "Aligning market priors...", "Synthesizing full report..."]
 };
 
@@ -94,6 +95,7 @@ export function LiveAnalysis() {
      judge1: { text: "Waiting to initiate...", status: 'idle' },
      judge2: { text: "Waiting to initiate...", status: 'idle' },
      judge3: { text: "Waiting to initiate...", status: 'idle' },
+     judge4: { text: "Locating boundaries...", status: 'idle' },
      system: { text: "Awaiting context...", status: 'idle' }
   });
   
@@ -160,6 +162,7 @@ export function LiveAnalysis() {
       judge1: { text: "Standby...", status: 'idle' },
       judge2: { text: "Standby...", status: 'idle' },
       judge3: { text: "Standby...", status: 'idle' },
+      judge4: { text: "Standby...", status: 'idle' },
       system: { text: "Standby...", status: 'idle' }
     });
 
@@ -460,6 +463,7 @@ export function LiveAnalysis() {
       judge1: { text: "Initializing Deep Scan...", status: 'active' },
       judge2: { text: "Initializing Deep Scan...", status: 'active' },
       judge3: { text: "Initializing Deep Scan...", status: 'active' },
+      judge4: { text: "Initializing Deep Scan...", status: 'active' },
       system: { text: "Injecting global context...", status: 'active' }
     });
 
@@ -522,6 +526,7 @@ export function LiveAnalysis() {
           judge1: { text: JUDGE_TASKS.judge1[i], status: 'active' },
           judge2: { text: JUDGE_TASKS.judge2[i], status: 'active' },
           judge3: { text: JUDGE_TASKS.judge3[i], status: 'active' },
+          judge4: { text: JUDGE_TASKS.judge4[i], status: 'active' },
           system: { text: JUDGE_TASKS.system[i], status: 'active' },
         });
         await new Promise(r => setTimeout(r, 2000));
@@ -532,6 +537,7 @@ export function LiveAnalysis() {
         judge1: { text: JUDGE_TASKS.judge1[4], status: 'active' },
         judge2: { text: JUDGE_TASKS.judge2[4], status: 'active' },
         judge3: { text: JUDGE_TASKS.judge3[4], status: 'active' },
+        judge4: { text: JUDGE_TASKS.judge4[4], status: 'active' },
         system: { text: "Simultaneously synthesizing neural nodes...", status: 'active' },
       });
 
@@ -552,21 +558,27 @@ export function LiveAnalysis() {
           judge1: { text: `Bull: ${(data.bull?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
           judge2: { text: `Bear: ${(data.bear?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
           judge3: { text: `Risk: ${(data.skeptic?.riskVerdict || data.skeptic?.skepticVerdict || "Analyzing...").substring(0, 30)}...`, status: 'done' },
+          judge4: { text: `Boundary: ${data.judge?.ruling?.substring(0, 30) || "Detected"}...`, status: 'done' },
           system: { text: `${data.techUsedCount} Patterns Identified ✅`, status: 'done' }
         });
         
         setAnalysisStep(`Analysis Complete: ${data.techUsedCount}/${techniquesList.length} Techniques Found`);
         
-        // Robust Direction Detection
+        // Robust Direction Detection with Confidence Threshold
         const rawWinner = (data.judge.winner || '').toUpperCase();
         const rawSignal = (data.judge.tradeDetails?.signal || '').toUpperCase();
+        const finalConfidence = Number(data.judge.finalConfidence) || 0;
         
         let direction: 'UP' | 'DOWN' | 'NO_TRADE' = 'NO_TRADE';
         
-        if (rawWinner === 'BULL' || rawSignal === 'CALL' || rawSignal === 'UP') {
-          direction = 'UP';
-        } else if (rawWinner === 'BEAR' || rawSignal === 'PUT' || rawSignal === 'DOWN') {
-          direction = 'DOWN';
+        if (finalConfidence >= 70) {
+          if (rawWinner === 'BULL' || rawSignal === 'CALL' || rawSignal === 'UP') {
+            direction = 'UP';
+          } else if (rawWinner === 'BEAR' || rawSignal === 'PUT' || rawSignal === 'DOWN') {
+            direction = 'DOWN';
+          }
+        } else {
+          console.log(`Signal blocked: Confidence level (${finalConfidence}%) below threshold (70%)`);
         }
 
         setTradingDirection(direction);
@@ -574,16 +586,24 @@ export function LiveAnalysis() {
         if (mode === 'camera') {
           // Live Analysis: Arrow phase then Entry phase
           setTradingPhase('WAITING_FOR_ENTRY');
-          setAnalysisStep(direction === 'NO_TRADE' ? 'CONFIRMING NO-TRADE SIGNAL...' : 'HUNTING PERFECT ENTRY POINT...');
+          if (direction === 'NO_TRADE') {
+            setAnalysisStep(finalConfidence < 70 ? `LOW CONFIDENCE (${finalConfidence}%) - NO TRADE` : 'CONFIRMING NO-TRADE SIGNAL...');
+          } else {
+            setAnalysisStep('HUNTING PERFECT ENTRY POINT...');
+          }
           
           await new Promise(r => setTimeout(r, 4000)); // Show arrows for 4 seconds
           setTradingPhase('ENTRY_CONFIRMED');
-          setAnalysisStep('EXECUTE NOW!');
+          setAnalysisStep(direction === 'NO_TRADE' ? 'SIGNAL ABORTED' : 'EXECUTE NOW!');
           setScoutActive(true); // START THE FAST BACKGROUND TICKER
         } else {
           // Screenshot Analysis: Direct to Entry phase
           setTradingPhase('ENTRY_CONFIRMED');
-          setAnalysisStep(direction === 'NO_TRADE' ? 'SIGNAL ABORTED' : 'SIGNAL CONFIRMED - EXECUTE NOW!');
+          if (direction === 'NO_TRADE') {
+             setAnalysisStep(finalConfidence < 70 ? `LOW CONFIDENCE (${finalConfidence}%) - ABORTED` : 'SIGNAL ABORTED');
+          } else {
+             setAnalysisStep('SIGNAL CONFIRMED - EXECUTE NOW!');
+          }
         }
         
         setAnalysis(data);
@@ -700,18 +720,18 @@ export function LiveAnalysis() {
             <Text style={tw`text-white text-2xl font-black`}>CONSOLE</Text>
           </View>
           <View style={tw`flex-row gap-2`}>
-            <TouchableOpacity 
+            <Pressable 
               onPress={handlePickTechnique}
-              style={[tw`w-9 h-9 rounded-lg items-center justify-center`, techFileName ? tw`bg-[#D9B382]` : tw`bg-white/5 border border-white/10`]}
+              style={({ pressed }) => [tw`w-9 h-9 rounded-lg items-center justify-center`, techFileName ? tw`bg-[#D9B382]` : tw`bg-white/5 border border-white/10`, { opacity: pressed ? 0.7 : 1 }]}
             >
               <FileText size={16} color={techFileName ? "#1A1308" : "#8B95B0"} />
-            </TouchableOpacity>
-            <TouchableOpacity 
+            </Pressable>
+            <Pressable 
               onPress={handlePickStatsFile}
-              style={[tw`w-9 h-9 rounded-lg items-center justify-center`, statsFileName ? tw`bg-[#D9B382]` : tw`bg-white/5 border border-white/10`]}
+              style={({ pressed }) => [tw`w-9 h-9 rounded-lg items-center justify-center`, statsFileName ? tw`bg-[#D9B382]` : tw`bg-white/5 border border-white/10`, { opacity: pressed ? 0.7 : 1 }]}
             >
               <TrendingUp size={16} color={statsFileName ? "#1A1308" : "#8B95B0"} />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
 
@@ -723,17 +743,18 @@ export function LiveAnalysis() {
               </View>
               <View style={tw`flex-row gap-1.5`}>
                 {symbols.map((s) => (
-                  <TouchableOpacity
+                  <Pressable
                     key={s.name}
                     onPress={() => setStockName(s.name)}
-                    style={[
+                    style={({ pressed }) => [
                       tw`flex-1 py-2.5 rounded-lg border items-center flex-row justify-center`,
-                      stockName === s.name ? tw`bg-[#D9B382] border-[#D9B382]` : tw`bg-black/20 border-white/5`
+                      stockName === s.name ? tw`bg-[#D9B382] border-[#D9B382]` : tw`bg-black/20 border-white/5`,
+                      { opacity: pressed ? 0.7 : 1 }
                     ]}
                   >
                     <Text style={[tw`mr-1.5 text-xs`, stockName === s.name ? tw`text-black` : tw`text-[#D9B382]`]}>{s.icon}</Text>
                     <Text style={[tw`text-[10px] font-black`, stockName === s.name ? tw`text-black` : tw`text-white`]}>{s.name}</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 ))}
               </View>
            </View>
@@ -742,23 +763,23 @@ export function LiveAnalysis() {
               <View style={tw`flex-1`}>
                  <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-wider mb-1.5`}>Graph TF</Text>
                  <View style={tw`relative`}>
-                      <TouchableOpacity 
+                      <Pressable 
                       onPress={() => { setShowTfPicker(!showTfPicker); setShowDurPicker(false); }}
-                      style={tw`bg-black/60 border border-white/10 h-10 rounded-lg px-3 flex-row items-center justify-between`}
+                      style={({ pressed }) => [tw`bg-black/60 border border-white/10 h-10 rounded-lg px-3 flex-row items-center justify-between`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       <Text style={{ color: '#D9B382', fontWeight: '900', fontSize: 11 }}>{graphTimeframe}</Text>
                       <ChevronDown size={12} color="#D9B382" />
-                    </TouchableOpacity>
+                    </Pressable>
                     {showTfPicker && (
                       <View style={[tw`absolute top-12 left-0 right-0 bg-[#2A2E39] border-2 border-[#D9B382] rounded-xl p-2 shadow-2xl`, { zIndex: 99999, elevation: 10 }]}>
                         {timeframes.map((tf) => (
-                          <TouchableOpacity
+                          <Pressable
                             key={tf}
                             onPress={() => { setGraphTimeframe(tf); setShowTfPicker(false); }}
-                            style={[tw`py-4 px-3 rounded-lg border-b border-white/10`, graphTimeframe === tf && tw`bg-[#D9B382]/20`]}
+                            style={({ pressed }) => [tw`py-4 px-3 rounded-lg border-b border-white/10`, graphTimeframe === tf && tw`bg-[#D9B382]/20`, { opacity: pressed ? 0.7 : 1 }]}
                           >
                             <Text style={[tw`text-sm font-black`, graphTimeframe === tf ? tw`text-[#D9B382]` : tw`text-white`]}>{tf}</Text>
-                          </TouchableOpacity>
+                          </Pressable>
                         ))}
                       </View>
                     )}
@@ -767,23 +788,23 @@ export function LiveAnalysis() {
               <View style={tw`flex-1`}>
                  <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-wider mb-1.5`}>Duration</Text>
                  <View style={tw`relative`}>
-                    <TouchableOpacity 
+                    <Pressable 
                       onPress={() => { setShowDurPicker(!showDurPicker); setShowTfPicker(false); }}
-                      style={tw`bg-black/60 border border-white/10 h-10 rounded-lg px-3 flex-row items-center justify-between`}
+                      style={({ pressed }) => [tw`bg-black/60 border border-white/10 h-10 rounded-lg px-3 flex-row items-center justify-between`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       <Text style={{ color: '#D9B382', fontWeight: '900', fontSize: 11 }}>{investmentDuration}</Text>
                       <ChevronDown size={12} color="#D9B382" />
-                    </TouchableOpacity>
+                    </Pressable>
                     {showDurPicker && (
                       <View style={[tw`absolute top-12 left-0 right-0 bg-[#2A2E39] border-2 border-[#D9B382] rounded-xl p-2 shadow-2xl`, { zIndex: 99999, elevation: 10 }]}>
                         {durations.map((d) => (
-                          <TouchableOpacity
+                          <Pressable
                             key={d}
                             onPress={() => { setInvestmentDuration(d); setShowDurPicker(false); }}
-                            style={[tw`py-4 px-3 rounded-lg border-b border-white/10`, investmentDuration === d && tw`bg-[#D9B382]/20`]}
+                            style={({ pressed }) => [tw`py-4 px-3 rounded-lg border-b border-white/10`, investmentDuration === d && tw`bg-[#D9B382]/20`, { opacity: pressed ? 0.7 : 1 }]}
                           >
                             <Text style={[tw`text-sm font-black`, investmentDuration === d ? tw`text-[#D9B382]` : tw`text-white`]}>{d}</Text>
-                          </TouchableOpacity>
+                          </Pressable>
                         ))}
                       </View>
                     )}
@@ -820,14 +841,14 @@ export function LiveAnalysis() {
                <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Chart Feed</Text>
                <View style={tw`flex-row bg-black/40 rounded-lg p-0.5 border border-white/5`}>
                   {(['camera', 'upload'] as const).map((m) => (
-                    <TouchableOpacity
+                    <Pressable
                       key={m}
                       onPress={() => setMode(m)}
-                      style={[tw`px-3 py-1 rounded-md flex-row items-center`, mode === m ? tw`bg-[#D9B382]` : tw`bg-transparent`]}
+                      style={({ pressed }) => [tw`px-3 py-1 rounded-md flex-row items-center`, mode === m ? tw`bg-[#D9B382]` : tw`bg-transparent`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       {m === 'camera' ? <Camera size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Upload size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
                       <Text style={[tw`ml-1.5 text-[8px] font-black uppercase`, mode === m ? tw`text-[#1A1308]` : tw`text-[#4B5570]`]}>{m}</Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   ))}
                </View>
             </View>
@@ -845,16 +866,22 @@ export function LiveAnalysis() {
                  )}
                  {!isCameraActive && (
                    <View style={tw`absolute inset-0 bg-black/80 items-center justify-center`}>
-                     <TouchableOpacity onPress={startCamera} style={tw`bg-[#D9B382] px-6 py-3 rounded-lg flex-row items-center`}>
+                     <Pressable
+                        onPress={startCamera}
+                        style={({ pressed }) => [tw`bg-[#D9B382] px-6 py-3 rounded-lg flex-row items-center`, { opacity: pressed ? 0.7 : 1 }]}
+                      >
                         <Camera size={18} color="#1A1308" />
                         <Text style={tw`text-[#1A1308] font-black ml-2`}>Start Camera</Text>
-                     </TouchableOpacity>
+                     </Pressable>
                    </View>
                  )}
                  {isCameraActive && (
-                   <TouchableOpacity onPress={stopCamera} style={tw`absolute top-2 right-2 bg-red-500/80 p-1.5 rounded-md`}>
+                   <Pressable 
+                      onPress={stopCamera} 
+                      style={({ pressed }) => [tw`absolute top-2 right-2 bg-red-500/80 p-1.5 rounded-md`, { opacity: pressed ? 0.7 : 1 }]}
+                    >
                      <Text style={tw`text-white font-bold text-[8px]`}>STOP</Text>
-                   </TouchableOpacity>
+                   </Pressable>
                  )}
                  {scoutActive && (
                    <View style={tw`absolute bottom-2 left-2 right-2 bg-black/90 p-2 rounded-lg border border-[#00FFFF]/30`}>
@@ -872,11 +899,12 @@ export function LiveAnalysis() {
                  )}
                </View>
             ) : (
-              <TouchableOpacity
+              <Pressable
                 onPress={handlePickImage}
-                style={[
+                style={({ pressed }) => [
                   tw`h-32 w-full rounded-xl bg-black/60 overflow-hidden border items-center justify-center`,
-                  selectedImage ? tw`border-[#D9B382]/20` : tw`border-dashed border-white/10`
+                  selectedImage ? tw`border-[#D9B382]/20` : tw`border-dashed border-white/10`,
+                  { opacity: pressed ? 0.7 : 1 }
                 ]}
               >
                 {selectedImage ? (
@@ -887,7 +915,7 @@ export function LiveAnalysis() {
                     <Text style={tw`text-[#4B5570] text-[9px] font-black uppercase tracking-wider`}>Sync Chart Image</Text>
                   </View>
                 )}
-              </TouchableOpacity>
+              </Pressable>
             )}
         </View>
 
@@ -923,7 +951,8 @@ export function LiveAnalysis() {
                 { key: 'system', label: 'System Context', color: '#00FFFF', bg: 'rgba(0, 255, 255, 0.05)' },
                 { key: 'judge1', label: 'Judge 1: Bull Consensus', color: '#FF00FF', bg: 'rgba(255, 0, 255, 0.05)' },
                 { key: 'judge2', label: 'Judge 2: Bear Pressure', color: '#FF1493', bg: 'rgba(255, 20, 147, 0.05)' },
-                { key: 'judge3', label: 'Judge 3: Risk Filter', color: '#39FF14', bg: 'rgba(57, 255, 20, 0.05)' }
+                { key: 'judge3', label: 'Judge 3: Risk Filter', color: '#39FF14', bg: 'rgba(57, 255, 20, 0.05)' },
+                { key: 'judge4', label: 'Judge 4: Reversal Gate', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.05)' }
               ].map((item, idx) => (
                 <motion.div
                   key={item.key}
@@ -968,15 +997,16 @@ export function LiveAnalysis() {
             </div>
           </motion.div>
         ) : (
-          <TouchableOpacity
+          <Pressable
             onPress={() => {
               closePickers();
               handleAnalyze();
             }}
             disabled={(mode === 'upload' && !selectedImage) || (mode === 'camera' && !isCameraActive)}
-            style={[
+            style={({ pressed }) => [
               tw`h-14 rounded-xl items-center justify-center mt-4`,
-              ((mode === 'upload' && !selectedImage) || (mode === 'camera' && !isCameraActive)) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`
+              ((mode === 'upload' && !selectedImage) || (mode === 'camera' && !isCameraActive)) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
+              { opacity: pressed ? 0.7 : 1 }
             ]}
           >
             <View style={tw`flex-row items-center`}>
@@ -985,7 +1015,7 @@ export function LiveAnalysis() {
                  {mode === 'camera' ? 'Start Camera Analysis' : 'Initiate Analysis'}
               </Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
         )}
 
         {analysisError && (
@@ -1075,6 +1105,7 @@ export function LiveAnalysis() {
                         { label: 'J1 reasoning', val: data.j1, max: 5 },
                         { label: 'J2 vehicle', val: data.j2, max: 5 },
                         { label: 'J3 z-score', val: data.j3, max: 5 },
+                        { label: 'J4 reversal', val: data.j4, max: 2.5 },
                       ].map((j, i) => (
                         <div key={i} className="mb-2">
                           <div className="flex flex-row justify-between items-center mb-1">
@@ -1201,21 +1232,21 @@ export function LiveAnalysis() {
                 
                 {!isStatsSaved ? (
                   <View style={tw`flex-row gap-4`}>
-                    <TouchableOpacity 
+                    <Pressable 
                       onPress={() => saveToStats(analysis, 'WIN')}
-                      style={tw`flex-1 bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`}
+                      style={({ pressed }) => [tw`flex-1 bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       <CheckCircle size={18} color="white" style={tw`mr-2`} />
                       <Text style={tw`text-white font-black uppercase text-sm`}>WIN (PROFIT)</Text>
-                    </TouchableOpacity>
+                    </Pressable>
                     
-                    <TouchableOpacity 
+                    <Pressable 
                       onPress={() => saveToStats(analysis, 'LOSS')}
-                      style={tw`flex-1 bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`}
+                      style={({ pressed }) => [tw`flex-1 bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       <XCircle size={18} color="white" style={tw`mr-2`} />
                       <Text style={tw`text-white font-black uppercase text-sm`}>LOSS</Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                 ) : (
                   <View style={tw`items-center`}>
@@ -1224,24 +1255,24 @@ export function LiveAnalysis() {
                       <Text style={tw`text-white text-xs font-bold`}>Entry added to statistics sequence.</Text>
                     </View>
                     
-                    <TouchableOpacity 
+                    <Pressable 
                       onPress={handleDownloadStats}
-                      style={tw`bg-[#D9B382] h-12 px-8 rounded-xl items-center justify-center flex-row`}
+                      style={({ pressed }) => [tw`bg-[#D9B382] h-12 px-8 rounded-xl items-center justify-center flex-row`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       <Download size={18} color="#1A1308" style={tw`mr-2`} />
                       <Text style={tw`text-[#1A1308] font-black uppercase text-sm`}>Download Updated Stats</Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                 )}
             </View>
 
-            <TouchableOpacity 
+            <Pressable 
               onPress={handleReset}
-              style={tw`mt-6 bg-[#1A1308] border border-white/10 h-14 rounded-2xl items-center justify-center flex-row shadow-2xl`}
+              style={({ pressed }) => [tw`mt-6 bg-[#1A1308] border border-white/10 h-14 rounded-2xl items-center justify-center flex-row shadow-2xl`, { opacity: pressed ? 0.7 : 1 }]}
             >
               <Sparkles size={20} color="#D9B382" style={tw`mr-3`} />
               <Text style={tw`text-white font-black uppercase tracking-[2px] text-sm`}>Start New Analysis</Text>
-            </TouchableOpacity>
+            </Pressable>
           </motion.div>
         )}
       </View>

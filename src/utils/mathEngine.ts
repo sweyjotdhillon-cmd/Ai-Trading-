@@ -223,17 +223,23 @@ export function calculateBoundaryReversal(yPercent: number) {
   let label = "NEUTRAL (CENTER)";
 
   if (yPercent <= 5) {
-    bearPoints = 1.0; // Price is at top, favor DOWN
+    bearPoints = 2.5; // Price is at top, favor DOWN
     label = "EXTREME HIGH (DANGER)";
   } else if (yPercent >= 95) {
-    bullPoints = 1.0; // Price is at bottom, favor UP
+    bullPoints = 2.5; // Price is at bottom, favor UP
     label = "EXTREME LOW (OVERSOLD)";
   } else if (yPercent <= 15) {
-    bearPoints = 0.5;
+    bearPoints = 1.5;
     label = "HIGH RANGE";
   } else if (yPercent >= 85) {
-    bullPoints = 0.5;
+    bullPoints = 1.5;
     label = "LOW RANGE";
+  } else if (yPercent <= 25) {
+    bearPoints = 0.5;
+    label = "MID-HIGH RANGE";
+  } else if (yPercent >= 75) {
+    bullPoints = 0.5;
+    label = "MID-LOW RANGE";
   }
 
   return { bullPoints, bearPoints, label, yPercent };

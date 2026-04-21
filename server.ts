@@ -120,25 +120,26 @@ async function callModel(params: {
 }
 
 const VISION_EXTRACTION_PROMPT = `
-You are an expert financial chart OCR and analysis tool. Analyze the provided candlestick chart.
-Your primary task is to extract high-precision numerical data for mathematical analysis.
+You are an expert financial chart OCR and analysis tool. Analyze the provided candlestick chart with extreme scrutiny. 
+Your primary task is to extract high-precision numerical data AND qualitative context for mathematical behavior analysis.
 
 Respond ONLY with a valid JSON object matching this structure exactly:
 {
   "recentOHLC": [
-    {"index": 0, "open": numeric, "high": numeric, "low": numeric, "close": numeric}
+    {"index": 0, "open": numeric, "high": numeric, "low": numeric, "close": numeric, "volume_relative": "low|medium|high"}
   ],
-  "candleBodies": [list_of_20_approx_body_sizes_in_pixels_or_relative_units],
+  "candleBodies": [list_of_20_approx_body_sizes_in_pixels],
   "currentPrice": numeric_value,
-  "priceYPercent": numeric_percentage_0_to_100_of_vertical_chart_position_0_is_top_100_is_bottom,
-  "keyLevels": [balance_of_at_least_3_supports_and_3_resistances],
-  "avgBodyHeight": numeric_value,
-  "volumeAnomalies": "string",
-  "visibleTrend": "string",
-  "priceActionContext": "string"
+  "priceYPercent": numeric_percentage_0_to_100,
+  "keyLevels": [balance_of_supports_and_resistances],
+  "marketStage": "ACCUMULATION|TRENDING_UP|DISTRIBUTION|TRENDING_DOWN|VOLATILE_RANGE",
+  "anomalyDetected": "string_describing_any_weird_wicks_or_gaps",
+  "trendStrength": number_0_to_100,
+  "dominantColor": "GREEN|RED|MIXED",
+  "priceActionContext": "Detailed description of the LAST 5 candles and their relation to the previous 15"
 }
 
-CRITICAL: You MUST identify both key levels BELOW (support) and ABOVE (resistance) the current price to ensure a balanced analysis.
+CRITICAL: Do not generalize. If the chart is messy, say it is messy in 'marketStage'. If one candle is 5x bigger than others, note it in 'anomalyDetected'.
 `;
 
 async function startServer() {
@@ -321,9 +322,11 @@ async function startServer() {
       }
 
       // Helper function for serial model calls with timeout and model fallback
-      const safeCall = async (prompt: string, img?: string, json: boolean = true) => {
+      const safeCall = async (prompt: string, img?: string, json: boolean = true, highReasoning: boolean = false) => {
         // Fallback chain for vision vs reasoning
-        const modelChain = ["gpt-4o-mini", "Llama-3.2-90B-Vision-Instruct", "gpt-4o"];
+        const modelChain = highReasoning 
+          ? ["gpt-4o", "gpt-4o-mini", "Llama-3.2-90B-Vision-Instruct"] 
+          : ["gpt-4o-mini", "Llama-3.2-90B-Vision-Instruct", "gpt-4o"];
 
         let lastError = "";
 
@@ -458,11 +461,12 @@ async function startServer() {
 
       const statScoresContext = `
 JUDGE 3 (Z-Score) Calculated: ${j3Result.zScore.toFixed(2)} -> Points: ${j3Result.points}/5.0
-BOUNDARY REVERSAL BIAS: ${boundaryResult.label} -> Bull: +${boundaryResult.bullPoints.toFixed(1)}, Bear: +${boundaryResult.bearPoints.toFixed(1)}
+JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> Bull: +${boundaryResult.bullPoints.toFixed(1)}, Bear: +${boundaryResult.bearPoints.toFixed(1)}/2.5
 `;
 
       // 2. Run Bull, Bear, and Skeptic in parallel
       const dataContext = `\nEXTRACTED CHART DATA (JSON):\n${visionExtractionRaw}${techContext}${binaryContext}`;
+      const isHighReq = true;
 
       const bullPrompt = BULL_PROMPT.replace('{{STRUCTURAL_PRIORS}}', visionStructuralPriors) + dataContext;
       const bearPrompt = BEAR_PROMPT.replace('{{STRUCTURAL_PRIORS}}', visionStructuralPriors) + dataContext;
@@ -470,9 +474,9 @@ BOUNDARY REVERSAL BIAS: ${boundaryResult.label} -> Bull: +${boundaryResult.bullP
 
       // Parallelize core arguments (with allSettled for resilience)
       const agentResults = await Promise.allSettled([
-        safeCall(bullPrompt),
-        safeCall(bearPrompt),
-        safeCall(skepticPrompt)
+        safeCall(bullPrompt, undefined, true, isHighReq),
+        safeCall(bearPrompt, undefined, true, isHighReq),
+        safeCall(skepticPrompt, undefined, true, isHighReq)
       ]);
 
       const bullRaw = agentResults[0].status === 'fulfilled' ? agentResults[0].value : null;
@@ -523,7 +527,7 @@ BOUNDARY REVERSAL BIAS: ${boundaryResult.label} -> Bull: +${boundaryResult.bullP
         `\n\nAGENT BULL ARGUMENT: ${bull.reasoning}\nBULL TECHNIQUES: ${bull.techniquesApplied?.join(', ') || 'None provided'}\n\nAGENT BEAR ARGUMENT: ${bear.reasoning}\nBEAR TECHNIQUES: ${bear.techniquesApplied?.join(', ') || 'None provided'}\n\nRISK ANALYST REPORT: ${skeptic.riskVerdict} (${skeptic.riskProbability}%)\n` + 
         dataContext + statsContext;
 
-      const judgeRaw = await safeCall(judgePrompt);
+      const judgeRaw = await safeCall(judgePrompt, undefined, true, true);
       const judge = parseResponse(judgeRaw);
 
       // Count techniques explicitly listed by scanning the markdown list format
@@ -588,6 +592,7 @@ BOUNDARY REVERSAL BIAS: ${boundaryResult.label} -> Bull: +${boundaryResult.bullP
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    console.log("Starting server in DEVELOPMENT mode with Vite middleware...");
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -595,10 +600,13 @@ BOUNDARY REVERSAL BIAS: ${boundaryResult.label} -> Bull: +${boundaryResult.bullP
     });
     app.use(vite.middlewares);
   } else {
+    console.log("Starting server in PRODUCTION mode...");
     const distPath = path.join(process.cwd(), 'dist');
+    console.log(`Serving static files from: ${distPath}`);
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    app.get('*', (req, res) => {
+      const indexPath = path.join(distPath, 'index.html');
+      res.sendFile(indexPath);
     });
   }
 

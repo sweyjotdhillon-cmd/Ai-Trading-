@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { 
   View, 
   Text, 
-  TouchableOpacity, 
+  Pressable, 
   ScrollView, 
   Platform 
 } from 'react-native';
@@ -158,13 +158,19 @@ export function StatisticsView() {
           <Text style={tw`text-white text-2xl font-black tracking-tight`}>TRADING JOURNAL</Text>
           <View style={tw`flex-row gap-2`}>
             {jsonData && (
-              <TouchableOpacity onPress={clearData} style={tw`w-10 h-10 border border-red-500/20 bg-red-500/5 rounded-xl items-center justify-center`}>
+              <Pressable 
+                onPress={clearData} 
+                style={({ pressed }) => [tw`w-10 h-10 border border-red-500/20 bg-red-500/5 rounded-xl items-center justify-center`, { opacity: pressed ? 0.7 : 1 }]}
+              >
                 <Trash2 size={18} color="#EF4444" />
-              </TouchableOpacity>
+              </Pressable>
             )}
-            <TouchableOpacity onPress={handleFileUpload} style={tw`w-10 h-10 bg-[#D9B382] rounded-xl items-center justify-center shadow-lg`}>
+            <Pressable 
+              onPress={handleFileUpload} 
+              style={({ pressed }) => [tw`w-10 h-10 bg-[#D9B382] rounded-xl items-center justify-center shadow-lg`, { opacity: pressed ? 0.7 : 1 }]}
+            >
               <Upload size={18} color="#1A1308" />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
       </View>
@@ -179,9 +185,12 @@ export function StatisticsView() {
             <Text style={tw`text-sm text-[#8B95B0] max-w-[280px] mb-8 text-center`}>
               Your trading history is currently empty. Upload your session data to visualize performance.
             </Text>
-            <TouchableOpacity onPress={handleFileUpload} style={tw`px-8 py-4 bg-[#D9B382] rounded-[24px]`}>
+            <Pressable 
+              onPress={handleFileUpload} 
+              style={({ pressed }) => [tw`px-8 py-4 bg-[#D9B382] rounded-[24px]`, { opacity: pressed ? 0.7 : 1 }]}
+            >
               <Text style={tw`text-[#1A1308] font-bold`}>Initialize Import</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         ) : (
           <>
@@ -190,12 +199,18 @@ export function StatisticsView() {
                     {jsonData?.stock ? `Analysis for ${jsonData.stock}` : 'Loaded Data'}
                 </Text>
                 <View style={tw`flex-row bg-[#14161C] rounded-xl p-1`}>
-                    <TouchableOpacity onPress={() => setViewMode('dashboard')} style={[tw`p-2 rounded-lg`, viewMode === 'dashboard' && tw`bg-[#D9B382]`]}>
+                    <Pressable 
+                      onPress={() => setViewMode('dashboard')} 
+                      style={({ pressed }) => [tw`p-2 rounded-lg`, viewMode === 'dashboard' && tw`bg-[#D9B382]`, { opacity: pressed ? 0.7 : 1 }]}
+                    >
                         <LayoutGrid size={16} color={viewMode === 'dashboard' ? '#1A1308' : '#8B95B0'} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setViewMode('grid')} style={[tw`p-2 rounded-lg`, viewMode === 'grid' && tw`bg-[#D9B382]`]}>
+                    </Pressable>
+                    <Pressable 
+                      onPress={() => setViewMode('grid')} 
+                      style={({ pressed }) => [tw`p-2 rounded-lg`, viewMode === 'grid' && tw`bg-[#D9B382]`, { opacity: pressed ? 0.7 : 1 }]}
+                    >
                         <List size={16} color={viewMode === 'grid' ? '#1A1308' : '#8B95B0'} />
-                    </TouchableOpacity>
+                    </Pressable>
                 </View>
             </View>
             {renderDataContent()}
