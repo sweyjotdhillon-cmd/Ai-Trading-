@@ -215,29 +215,29 @@ export function calculateZScoreSignificance(candles: { open: number, close: numb
 /**
  * Physical Boundary Reversal Logic
  * Gives extra weight to reversals when price is at the extreme edges of the chart.
- * @param yPercent 0 (top) to 100 (bottom)
+ * @param yPercent 0 (bottom of chart/lowest price) to 100 (top of chart/highest price)
  */
 export function calculateBoundaryReversal(yPercent: number) {
   let bullPoints = 0;
   let bearPoints = 0;
   let label = "NEUTRAL (CENTER)";
 
-  if (yPercent <= 5) {
+  if (yPercent >= 85) {
     bearPoints = 2.5; // Price is at top, favor DOWN
     label = "EXTREME HIGH (DANGER)";
-  } else if (yPercent >= 95) {
+  } else if (yPercent <= 15) {
     bullPoints = 2.5; // Price is at bottom, favor UP
     label = "EXTREME LOW (OVERSOLD)";
-  } else if (yPercent <= 15) {
+  } else if (yPercent >= 75) {
     bearPoints = 1.5;
     label = "HIGH RANGE";
-  } else if (yPercent >= 85) {
+  } else if (yPercent <= 25) {
     bullPoints = 1.5;
     label = "LOW RANGE";
-  } else if (yPercent <= 25) {
+  } else if (yPercent >= 65) {
     bearPoints = 0.5;
     label = "MID-HIGH RANGE";
-  } else if (yPercent >= 75) {
+  } else if (yPercent <= 35) {
     bullPoints = 0.5;
     label = "MID-LOW RANGE";
   }

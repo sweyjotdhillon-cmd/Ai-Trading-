@@ -890,7 +890,7 @@ export function LiveAnalysis() {
                            <View style={tw`w-2 h-2 rounded-full bg-[#00FFFF] mr-2`} />
                            <Text style={tw`text-[#00FFFF] font-black text-[9px] uppercase tracking-widest`}>Live Tick Scout</Text>
                          </View>
-                         <Text style={tw`text-white font-black text-[10px]`}>{scoutData ? scoutData.action : 'ANALYZING...'}</Text>
+                         <Text style={tw`text-white font-black text-[10px]`}>{scoutData ? scoutData.action.replace('BAIL', 'EXIT') : 'ANALYZING...'}</Text>
                       </View>
                       {scoutData && (
                         <Text style={tw`text-white/80 text-[9px] leading-3 font-medium`}>{scoutData.reason}</Text>
@@ -1131,7 +1131,7 @@ export function LiveAnalysis() {
                           transition={{ duration: 2, repeat: Infinity }}
                           className={`text-xs font-black ${isWinner ? (side === 'bull' ? 'text-green-400' : 'text-red-400') : 'text-white'}`}
                         >
-                          {data.total}/15
+                          {data.total}/17.5
                         </motion.p>
                       </div>
                     </motion.div>

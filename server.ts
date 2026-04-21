@@ -130,7 +130,7 @@ Respond ONLY with a valid JSON object matching this structure exactly:
   ],
   "candleBodies": [list_of_20_approx_body_sizes_in_pixels],
   "currentPrice": numeric_value,
-  "priceYPercent": numeric_percentage_0_to_100,
+  "priceYPercent": "numeric_percentage_0_to_100 (0 means price is at the very bottom of the chart image, 100 means price is at the very top of the chart image)",
   "keyLevels": [balance_of_supports_and_resistances],
   "marketStage": "ACCUMULATION|TRENDING_UP|DISTRIBUTION|TRENDING_DOWN|VOLATILE_RANGE",
   "anomalyDetected": "string_describing_any_weird_wicks_or_gaps",
@@ -460,8 +460,8 @@ async function startServer() {
       }
 
       const statScoresContext = `
-JUDGE 3 (Z-Score) Calculated: ${j3Result.zScore.toFixed(2)} -> Points: ${j3Result.points}/5.0
-JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> Bull: +${boundaryResult.bullPoints.toFixed(1)}, Bear: +${boundaryResult.bearPoints.toFixed(1)}/2.5
+JUDGE 3 (Z-Score): ${j3Result.zScore.toFixed(2)} -> ALREADY CALCULATED POINTS: ${j3Result.points.toFixed(1)} / 5.0
+JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED POINTS: Bull Gets +${boundaryResult.bullPoints.toFixed(1)}, Bear Gets +${boundaryResult.bearPoints.toFixed(1)}
 `;
 
       // 2. Run Bull, Bear, and Skeptic in parallel
@@ -556,15 +556,15 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> Bull: +${boundaryRe
       if (!image || !anchorThesis) return res.status(400).json({ error: "Missing image or thesis" });
       
       const prompt = `
-      You are the LIVE TICK SCOUT. 
+      Perform a quick analysis of the newest candles on the right edge of this chart for a trading simulation.
+      
       ANCHOR THESIS (The Macro AI Decision):
       ${anchorThesis}
       
-      Look closely at the NEWEST candles on the right edge of this live feed.
-      Does the new price action support or break the anchor thesis?
+      Does the new price action support or contradict the anchor thesis?
       Respond ONLY with a valid JSON object:
       {
-        "action": "HOLD" | "BUILD" | "BAIL",
+        "action": "HOLD" | "BUILD" | "EXIT",
         "reason": "1 strict sentence explaining live candle movement"
       }
       `;

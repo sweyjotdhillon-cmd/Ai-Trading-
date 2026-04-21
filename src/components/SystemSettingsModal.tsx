@@ -4,9 +4,8 @@ import {
   View, 
   Text, 
   TextInput, 
-  TouchableOpacity, 
-  ScrollView,
-  Pressable
+  Pressable, 
+  ScrollView
 } from 'react-native';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ShieldAlert, CheckCircle, Copy, Share2 } from 'lucide-react';
@@ -94,9 +93,12 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                   <ShieldAlert style={tw`mr-2 text-[#D9B382]`} size={20} />
                   <Text style={tw`text-lg font-bold text-white`}>System Settings</Text>
                 </View>
-                <TouchableOpacity onPress={() => setTimeout(onClose, 10)} style={tw`p-2 hover:bg-white/5 rounded-full`}>
+                <Pressable 
+                  onPress={() => setTimeout(onClose, 10)} 
+                  style={({ pressed }) => [tw`p-2 hover:bg-white/5 rounded-full`, { opacity: pressed ? 0.7 : 1 }]}
+                >
                   <X size={20} color="#8B95B0" />
-                </TouchableOpacity>
+                </Pressable>
               </View>
               
               <ScrollView style={tw`p-6`} contentContainerStyle={tw`pb-20`}>
@@ -115,11 +117,12 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                           <Text style={tw`text-[#8B95B0] text-[10px]`}>Share this AI terminal with others</Text>
                         </View>
                       </View>
-                      <TouchableOpacity 
+                      <Pressable 
                         onPress={handleCopyLink}
-                        style={[
+                        style={({ pressed }) => [
                           tw`px-3 py-2 rounded-lg flex-row items-center gap-2`,
-                          copyStatus === 'copied' ? tw`bg-green-500/10` : tw`bg-[#D9B382]/10`
+                          copyStatus === 'copied' ? tw`bg-green-500/10` : tw`bg-[#D9B382]/10`,
+                          { opacity: pressed ? 0.7 : 1 }
                         ]}
                       >
                         {copyStatus === 'copied' ? (
@@ -130,7 +133,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                         <Text style={[tw`text-[10px] font-black uppercase`, copyStatus === 'copied' ? tw`text-green-500` : tw`text-[#D9B382]`]}>
                           {copyStatus === 'copied' ? 'Copied' : 'Copy'}
                         </Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     </View>
                   </View>
                 </View>
@@ -177,13 +180,14 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                     </View>
                   </View>
 
-                  <TouchableOpacity
+                  <Pressable
                     onPress={handleSave}
-                    style={[
+                    style={({ pressed }) => [
                       tw`mt-8 w-full py-4 rounded-xl flex-row items-center justify-center`,
                       saveStatus === 'saved' 
                         ? tw`bg-green-500/20 border border-green-500/30` 
-                        : tw`bg-[#D9B382]`
+                        : tw`bg-[#D9B382]`,
+                      { opacity: pressed ? 0.7 : 1 }
                     ]}
                   >
                     {saveStatus === 'saved' && <CheckCircle style={tw`mr-2 text-green-400`} size={18} />}
@@ -193,7 +197,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                     ]}>
                       {saveStatus === 'saved' ? 'Settings Saved' : 'Save Settings'}
                     </Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
 
                 <View style={tw`bg-black/10 p-4 rounded-xl mb-4`}>
