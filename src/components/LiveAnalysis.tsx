@@ -622,11 +622,15 @@ export function LiveAnalysis() {
 
     } catch (error: any) {
       clearTimeout(timeoutId);
-      console.error("Critical Analysis Error:", error);
       let msg = error.message || "Unknown error";
-      if (error.name === 'AbortError' || msg.includes('aborted')) {
+      const lowerMsg = msg.toLowerCase();
+      
+      if (error.name === 'AbortError' || lowerMsg.includes('aborted') || lowerMsg.includes('abort')) {
         msg = "Analysis timed out (180s limit). The models are deep in thought. Please try again.";
+      } else if (lowerMsg.includes('failed to fetch') || lowerMsg.includes('fetch failed') || lowerMsg.includes('network error') || lowerMsg.includes('load failed')) {
+        msg = "Network connection dropped (took too long or backend reset). Please try again or use a smaller chart timeframe.";
       }
+      console.error("Analysis Debug Info:", msg);
       setAnalysisError(msg);
       setTradingPhase('IDLE');
       setLoading(false);

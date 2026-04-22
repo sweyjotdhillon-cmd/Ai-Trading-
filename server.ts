@@ -59,7 +59,7 @@ async function callModel(params: {
 
   while (retries >= 0) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90000); // Increased to 90s
+    const timeoutId = setTimeout(() => controller.abort(), 150000); // Increased to 150s
     try {
       const response = await fetch(
         endpoint,
@@ -100,8 +100,9 @@ async function callModel(params: {
     const result = await response.json();
     return result.choices[0].message.content || "";
     } catch (err: any) {
-      if (err.name === 'AbortError') {
-        throw new Error("GitHub Models API Request Timed Out (80s).");
+      const msg = err?.message || "";
+      if (err.name === 'AbortError' || msg.includes('aborted') || msg.includes('abort')) {
+        throw new Error("GitHub Models API Request Timed Out (150s).");
       }
       if (retries === 0) {
         throw err;
@@ -157,13 +158,13 @@ async function startServer() {
 
   app.use(cors({ origin: '*' })); // Keep wildcard cors for now to support AI studio iframes, but reduce limits
   
-  // Apply a standard 2mb limit globally to prevent broad DoS
-  app.use(express.json({ limit: '2mb' }));
-  app.use(express.urlencoded({ limit: '2mb', extended: true }));
-
   // Exception limit for high-bandwidth endpoints like image analysis
   app.use('/api/debate', express.json({ limit: '50mb' }));
   app.use('/api/debate', express.urlencoded({ limit: '50mb', extended: true }));
+
+  // Apply a standard 2mb limit globally to prevent broad DoS
+  app.use(express.json({ limit: '2mb' }));
+  app.use(express.urlencoded({ limit: '2mb', extended: true }));
 
   // API Routes
   app.get("/api/health", (req, res) => {
@@ -615,7 +616,10 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   });
   
-  server.timeout = 180000;
+  // Dramatically increase Node timeouts to prevent "Failed to fetch" socket hangups.
+  // The frontend will gracefully abort at 180s, so the backend should comfortably outlast that.
+  server.timeout = 300000;
+  server.keepAliveTimeout = 300000;
 }
 
 startServer().catch(err => {
