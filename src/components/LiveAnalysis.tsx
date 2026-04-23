@@ -94,6 +94,7 @@ export function LiveAnalysis() {
   const [stockName, setStockName] = useState('Bitcoin');
   const [graphTimeframe, setGraphTimeframe] = useState('30 minutes');
   const [loading, setLoading] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [mode, setMode] = useState<'camera' | 'upload'>('camera');
@@ -166,6 +167,7 @@ export function LiveAnalysis() {
     setSelectedImage(null);
     setTradingPhase('IDLE');
     setTradingDirection(null);
+    setIsBusy(false);
     setIsStatsSaved(false);
     setMode('camera');
     setStockName('Bitcoin');
@@ -492,6 +494,7 @@ export function LiveAnalysis() {
     // Small delay to allow the native touch event to complete on web
     setTimeout(async () => {
       setLoading(true);
+      setIsBusy(true);
       setAnalysisError(null);
       setAnalysis(null);
       setTradingPhase('ANALYSING_DIRECTION');
@@ -590,6 +593,7 @@ export function LiveAnalysis() {
 
       if (data && data.judge) {
         setLoading(false); // CLOSE LOADING IMMEDIATELY ON SUCCESS
+        setIsBusy(false);
         setJudgeLogs({
           system: { text: `${data.techUsedCount} Patterns Identified ✅`, status: 'done', phase: 'Synthesis Complete' },
           judge1: { text: `Bull: ${(data.bull?.reasoning || "Analyzing...").substring(0, 40)}...`, status: 'done', phase: 'Case Closed' },
@@ -672,6 +676,7 @@ export function LiveAnalysis() {
       setTradingPhase('IDLE');
       setLoading(false);
       setFlowProgress(0);
+      setIsBusy(false);
     }
     }, 10);
   };
@@ -962,7 +967,7 @@ export function LiveAnalysis() {
         </View>
 
         {/* Action Bar / Live Debate UI Overlay */}
-        {loading ? (
+        {(loading || isBusy) ? (
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
