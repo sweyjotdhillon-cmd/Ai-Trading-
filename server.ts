@@ -54,19 +54,19 @@ async function callModel(params: {
     payload.response_format = { type: "json_object" };
   }
 
-  let retries = 6; // Increased retries for stability
-  let delay = 2000; // Longer initial delay
+  let retries = 1; // Only 1 retry before failing over to the next model in the chain
+  let delay = 1000;
 
   while (retries >= 0) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 150000); // Increased to 150s
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s per individual call limit
     try {
       const response = await fetch(
         endpoint,
         {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${apiKey}`,
+             "Authorization": `Bearer ${apiKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify(payload),
@@ -76,15 +76,14 @@ async function callModel(params: {
 
     if (response.status === 429) {
       if (retries === 0) {
-        throw new Error(`GitHub Models API Rate Limit Exceeded (429) after multiple retries. Please wait 1-2 minutes before trying again.`);
+        throw new Error(`GitHub Models API Rate Limit Exceeded (429). Please wait a moment before trying again.`);
       }
-      // Add random jitter between 200 and 2000ms
-      const jitter = 200 + Math.floor(Math.random() * 1800);
-      const totalDelay = delay + jitter;
+      const jitter = 200 + Math.floor(Math.random() * 1000);
+      const totalDelay = Math.min(delay + jitter, 10000); // Cap retry delay at 10 seconds
       console.warn(`Rate limited (429). Retrying in ${totalDelay}ms... (${retries} retries left)`);
       await new Promise(resolve => setTimeout(resolve, totalDelay));
       retries--;
-      delay *= 2.2; // Aggressive backoff
+      delay *= 1.5; 
       continue;
     }
 
@@ -102,7 +101,7 @@ async function callModel(params: {
     } catch (err: any) {
       const msg = err?.message || "";
       if (err.name === 'AbortError' || msg.includes('aborted') || msg.includes('abort')) {
-        throw new Error("GitHub Models API Request Timed Out (150s).");
+        throw new Error("GitHub Models API Request Timed Out (240s).");
       }
       if (retries === 0) {
         throw err;
@@ -229,8 +228,7 @@ async function startServer() {
         const flow = calculateHamiltonianFlow(priceHistory[priceHistory.length-1], priceHistory[priceHistory.length-1] - (priceHistory[priceHistory.length-2] || priceHistory[priceHistory.length-1]));
         
         // Wasserstein similarity to a "perfect" trend prototype (linear sequence)
-        const trendSteps = Math.max(1, priceHistory.length - 1);
-        const perfectTrend = Array.from({ length: priceHistory.length }, (_, i) => priceHistory[0] + (priceHistory[priceHistory.length-1] - priceHistory[0]) * (i / trendSteps));
+        const perfectTrend = Array.from({ length: priceHistory.length }, (_, i) => priceHistory[0] + (priceHistory[priceHistory.length-1] - priceHistory[0]) * (i / (priceHistory.length - 1)));
         const wasserstein = calculateWassersteinSimilarity(priceHistory, perfectTrend);
 
         geometricOracles = `
@@ -275,7 +273,8 @@ async function startServer() {
   });
 
   app.post("/api/debate", async (req, res) => {
-    console.log(`[API] Received debate request at ${new Date().toISOString()}`);
+    const bodySize = JSON.stringify(req.body).length;
+    console.log(`[API] Received debate request at ${new Date().toISOString()} - Approx Size: ${(bodySize / 1024 / 1024).toFixed(2)}MB`);
     const { image, symbol, timeframe, investment, structuralPriors, geometricOracles, githubToken, githubEndpoint, techniqueData, statsData } = req.body;
     
     if (!image) {
@@ -357,8 +356,7 @@ async function startServer() {
           } catch (e: any) {
             lastError = e.message;
             console.warn(`[DEBATE] Call failed for model ${modelName}, trying next... :`, e.message);
-            // Wait a bit before trying fallback model
-            await new Promise(r => setTimeout(r, 1000));
+            // Immediately try fallback model without long artificial wait
           }
         }
 
@@ -439,8 +437,7 @@ async function startServer() {
         const rqa = calculateRQA(priceHistory);
         const tda = calculatePersistentEntropy(priceHistory);
         const flow = calculateHamiltonianFlow(priceHistory[priceHistory.length-1], priceHistory[priceHistory.length-1] - (priceHistory[priceHistory.length-2] || priceHistory[priceHistory.length-1]));
-        const trendSteps = Math.max(1, priceHistory.length - 1);
-        const perfectTrend = Array.from({ length: priceHistory.length }, (_, i) => priceHistory[0] + (priceHistory[priceHistory.length-1] - priceHistory[0]) * (i / trendSteps));
+        const perfectTrend = Array.from({ length: priceHistory.length }, (_, i) => priceHistory[0] + (priceHistory[priceHistory.length-1] - priceHistory[0]) * (i / (priceHistory.length - 1)));
         const wasserstein = calculateWassersteinSimilarity(priceHistory, perfectTrend);
 
         visionGeometricOracles = `
@@ -475,11 +472,20 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
       const bearPrompt = BEAR_PROMPT.replace('{{STRUCTURAL_PRIORS}}', visionStructuralPriors) + dataContext;
       const skepticPrompt = SKEPTIC_PROMPT + `\nGEOMETRIC ORACLES: ${visionGeometricOracles}` + dataContext;
 
-      // Parallelize core arguments (with allSettled for resilience)
+      // Parallelize core arguments with STAGGERED starts to avoid burst rate limits
       const agentResults = await Promise.allSettled([
-        safeCall(bullPrompt, undefined, true, isHighReq),
-        safeCall(bearPrompt, undefined, true, isHighReq),
-        safeCall(skepticPrompt, undefined, true, isHighReq)
+        (async () => {
+          // No delay for bull
+          return safeCall(bullPrompt, undefined, true, isHighReq);
+        })(),
+        (async () => {
+          await new Promise(r => setTimeout(r, 4000)); // 4s stagger
+          return safeCall(bearPrompt, undefined, true, isHighReq);
+        })(),
+        (async () => {
+          await new Promise(r => setTimeout(r, 8000)); // 8s stagger
+          return safeCall(skepticPrompt, undefined, true, isHighReq);
+        })()
       ]);
 
       const bullRaw = agentResults[0].status === 'fulfilled' ? agentResults[0].value : null;
@@ -593,6 +599,24 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
     }
   });
 
+  // Catch-all for unhandled API routes to prevent fallback to HTML index
+  app.all("/api/*all", (req, res) => {
+    res.status(404).json({ error: `Route ${req.method} ${req.url} not found on this server.` });
+  });
+
+  // Global Error Handler (Keep at bottom of API routes, before Vite/Static)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("Global Server Error:", err);
+    if (err instanceof SyntaxError && 'status' in err && 'body' in err) {
+      return res.status(400).json({ error: "Invalid JSON payload" });
+    }
+    res.status(err.status || 500).json({ 
+      error: err.message || "Internal Server Error",
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     console.log("Starting server in DEVELOPMENT mode with Vite middleware...");
@@ -607,7 +631,7 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
     const distPath = path.join(process.cwd(), 'dist');
     console.log(`Serving static files from: ${distPath}`);
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*all', (req, res) => {
       const indexPath = path.join(distPath, 'index.html');
       res.sendFile(indexPath);
     });
@@ -619,9 +643,9 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
   });
   
   // Dramatically increase Node timeouts to prevent "Failed to fetch" socket hangups.
-  // The frontend will gracefully abort at 180s, so the backend should comfortably outlast that.
-  server.timeout = 300000;
-  server.keepAliveTimeout = 300000;
+  // The frontend will gracefully abort at 300s, so the backend should comfortably outlast that.
+  server.timeout = 360000;
+  server.keepAliveTimeout = 360000;
 }
 
 startServer().catch(err => {

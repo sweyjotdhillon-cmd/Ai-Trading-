@@ -18,7 +18,6 @@ export default defineConfig({
     port: 3000,
   },
   define: {
-    // No frontend environment variables required at this stage
-    global: "window",
-  },
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
+  }
 });

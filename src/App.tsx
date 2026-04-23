@@ -20,6 +20,7 @@ import { auth, signIn, logOut as firebaseLogOut } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
 function App() {
+  console.log("[App] Mounting...");
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,10 +31,16 @@ function App() {
   useEffect(() => {
     const handleError = (e: any) => {
       console.error("Global error caught:", e);
-      setError(String(e.message || e));
+    };
+    const handleRejection = (e: any) => {
+      console.error("Unhandled promise rejection:", e.reason);
     };
     window.addEventListener('error', handleError);
-    return () => window.removeEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleRejection);
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleRejection);
+    };
   }, []);
 
   useEffect(() => {

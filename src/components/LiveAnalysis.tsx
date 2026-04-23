@@ -73,6 +73,7 @@ export function LiveAnalysis() {
   const [stockName, setStockName] = useState('Bitcoin');
   const [graphTimeframe, setGraphTimeframe] = useState('30 minutes');
   const [loading, setLoading] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [mode, setMode] = useState<'camera' | 'upload'>('camera');
@@ -157,6 +158,8 @@ export function LiveAnalysis() {
     setInvestmentDuration('5m');
     setScoutActive(false);
     setScoutData(null);
+    setLoading(false);
+    setIsBusy(false);
     
     setJudgeLogs({
       judge1: { text: "Standby...", status: 'idle' },
@@ -426,6 +429,9 @@ export function LiveAnalysis() {
   };
 
   const handleAnalyze = async () => {
+    if (loading || isBusy) return;
+    setIsBusy(true);
+
     let finalImageToAnalyze = selectedImage;
 
     // Capture from live video feed if camera is active
@@ -444,10 +450,12 @@ export function LiveAnalysis() {
       setTimeout(() => {
         alert("Please start the camera or upload a chart image first.");
       }, 300);
+      setIsBusy(false);
       return;
     }
 
-    // Small delay to allow the native touch event to complete on web
+    // Increased delay (250ms) to ensure the gesture system releases the button properly 
+    // before the component unmounts for the loading screen.
     setTimeout(async () => {
       setLoading(true);
       setAnalysisError(null);
@@ -474,7 +482,7 @@ export function LiveAnalysis() {
       } catch (e) {
         console.warn("Manual abort failed", e);
       }
-    }, 180000); // Increased to 180s Safety Timeout
+    }, 360000); // Increased to 360s Safety Timeout
 
     try {
       const fetchWithRetry = async (url: string, options: any, retries: number = 2): Promise<Response> => {
@@ -545,15 +553,43 @@ export function LiveAnalysis() {
       const [response] = await Promise.all([apiCall, minTimer]) as [Response, any];
       clearTimeout(timeoutId);
 
+      const contentType = response.headers.get('content-type');
       if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || `Server Error: ${response.status}`);
+        let errorMsg = `Server Error: ${response.status}`;
+        try {
+          if (contentType && contentType.includes('application/json')) {
+            const err = await response.json();
+            errorMsg = err.error || errorMsg;
+          } else {
+            const text = await response.text();
+            console.error("Non-JSON Error Response:", text.substring(0, 500));
+            errorMsg = `Server Error (${response.status}): The backend returned an invalid response.`;
+          }
+        } catch (e) {
+          console.error("Error parsing error response:", e);
+        }
+        throw new Error(errorMsg);
+      }
+
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error("Expected JSON but got:", text.substring(0, 500));
+        
+        // Extract title or body from HTML if possible
+        const titleMatch = text.match(/<title>(.*?)<\/title>/i);
+        const title = titleMatch ? titleMatch[1] : null;
+        
+        if (title) {
+          throw new Error(`Server Error (${response.status}): ${title}`);
+        }
+        throw new Error(`Server Error (${response.status}): The backend returned an unexpected HTML response. This usually happens during a server restart or timeout.`);
       }
 
       const data = await response.json();
 
       if (data && data.judge) {
         setLoading(false); // CLOSE LOADING IMMEDIATELY ON SUCCESS
+        setIsBusy(false);
         setJudgeLogs({
           judge1: { text: `Bull: ${(data.bull?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
           judge2: { text: `Bear: ${(data.bear?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
@@ -626,7 +662,7 @@ export function LiveAnalysis() {
       const lowerMsg = msg.toLowerCase();
       
       if (error.name === 'AbortError' || lowerMsg.includes('aborted') || lowerMsg.includes('abort')) {
-        msg = "Analysis timed out (180s limit). The models are deep in thought. Please try again.";
+        msg = "Analysis timed out (360s limit). The models are deep in thought. Please try again.";
       } else if (lowerMsg.includes('failed to fetch') || lowerMsg.includes('fetch failed') || lowerMsg.includes('network error') || lowerMsg.includes('load failed')) {
         msg = "Network connection dropped (took too long or backend reset). Please try again or use a smaller chart timeframe.";
       }
@@ -634,6 +670,7 @@ export function LiveAnalysis() {
       setAnalysisError(msg);
       setTradingPhase('IDLE');
       setLoading(false);
+      setIsBusy(false);
     }
     }, 10);
   };
@@ -1003,14 +1040,15 @@ export function LiveAnalysis() {
         ) : (
           <Pressable
             onPress={() => {
+              if (isBusy) return;
               closePickers();
               handleAnalyze();
             }}
-            disabled={(mode === 'upload' && !selectedImage) || (mode === 'camera' && !isCameraActive)}
+            disabled={(mode === 'upload' && !selectedImage) || (mode === 'camera' && !isCameraActive) || isBusy}
             style={({ pressed }) => [
               tw`h-14 rounded-xl items-center justify-center mt-4`,
-              ((mode === 'upload' && !selectedImage) || (mode === 'camera' && !isCameraActive)) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
-              { opacity: pressed ? 0.7 : 1 }
+              ((mode === 'upload' && !selectedImage) || (mode === 'camera' && !isCameraActive) || isBusy) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
+              { opacity: (pressed && !isBusy) ? 0.7 : 1 }
             ]}
           >
             <View style={tw`flex-row items-center`}>
