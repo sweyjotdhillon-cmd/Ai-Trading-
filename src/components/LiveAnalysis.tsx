@@ -527,6 +527,9 @@ export function LiveAnalysis() {
         }),
         signal: controller.signal
       });
+      // Attach a dummy catch handler to prevent 'unhandledrejection' events
+      // if the fetch fails while the simulation loop below is still running.
+      apiCall.catch(() => {});
 
       // 2. RUN SIMULATION (Progressively show what judges are doing)
       for (let i = 0; i <= 3; i++) {

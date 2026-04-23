@@ -64,10 +64,10 @@ You are tasked with providing an objective evaluation of theoretical trade setup
 ─────────────────────────────────────
 THE 4-METRIC SCORING CRITERIA
 ─────────────────────────────────────
-JUDGE 1 — Argument Quality (Max: 5 pts)
-JUDGE 2 — Context Alignment (Max: 5 pts)
-JUDGE 3 — Statistical Z-Score (Max: 5 pts) - DATA PROVIDED
-JUDGE 4 — Trend Reversal Boundary (Max: 2.5 pts) - DATA PROVIDED
+JUDGE 1 — Argument Quality (Max: 4 pts)
+JUDGE 2 — Context Alignment (Max: 4 pts)
+JUDGE 3 — Statistical Z-Score (Max: 4 pts) - DATA PROVIDED
+JUDGE 4 — Trend Reversal Boundary (Max: 3 pts) - DATA PROVIDED
 
 CRITICAL: You MUST use the EXACT points provided in the "SCORING DATA PROVIDED" section for J3 and J4. 
 Do not hallucinate or modify J3 or J4 points. If the data provides 0.0 for J4, you MUST use 0.0. 
@@ -90,10 +90,10 @@ GEOMETRIC & PHYSICAL ORACLES:
 ─────────────────────────────────────
 INHALATION & CONFLICT RESOLUTION (MANDATORY BALANCE)
 ─────────────────────────────────────
-1. Calculate the hypothetical TOTAL SCORE for the BULL setup and BEAR setup individually (Max: 17.5 points).
+1. Calculate the hypothetical TOTAL SCORE for the BULL setup and BEAR setup individually (Max: 15.0 points).
 2. Adjust for the Risk Assessment. If risk is high (>60%), you MUST remain extremely cautious.
 3. The WINNER is the side with the HIGHER score after risk adjustments.
-4. If BOTH scores (after risk adjustment) are below 9.0, the winner is "NO_TRADE".
+4. If BOTH scores (after risk adjustment) are below 8.0, the winner is "NO_TRADE".
 5. If the winner is BULL, the signal MUST be "CALL". 
 6. If the winner is BEAR, the signal MUST be "PUT".
 7. BALANCE DIRECTIVE: Avoid favoring CALL signals solely based on macro trend. If there is no clear breakdown or breakthrough, prefer NO TRADE.
@@ -144,12 +144,12 @@ Your response MUST be a JSON object with this structure:
 
 The "formattedReport" MUST look like this:
 CASE 1: BULL        CASE 2: BEAR
-J1: X/5             J1: X/5
-J2: X/5             J2: X/5
-J3: X/5             J3: X/5
-J4: X/2.5           J4: X/2.5
+J1: X/4             J1: X/4
+J2: X/4             J2: X/4
+J3: X/4             J3: X/4
+J4: X/3.0           J4: X/3.0
 ─────────────       ─────────────
-Adj. Total: T1/17.5 Adj. Total: T2/17.5
+Adj. Total: T1/15.0 Adj. Total: T2/15.0
 
 Decision: [Winner] ([Signal Type])
 `;

@@ -197,17 +197,17 @@ export function calculateZScoreSignificance(candles: { open: number, close: numb
   
   const zScore = stdDev === 0 ? 0 : (currentBody - mean) / stdDev;
   
-  let points = -0.01; // Tiny epsilon to avoid clean zero
-  if (zScore >= 2.0) points = 5.0;
-  else if (zScore >= 1.5) points = 4.0;
-  else if (zScore >= 1.0) points = 3.0;
+  let points = 0.10; // Moderate default value as per prompt instructions
+  if (zScore >= 2.0) points = 4.0;
+  else if (zScore >= 1.5) points = 3.0;
+  else if (zScore >= 1.0) points = 2.0;
   else if (zScore >= 0.5) points = 1.0;
-  else if (zScore > 0.0) points = -0.1;
+  else if (zScore > 0.0) points = 0.10;
   else if (zScore > -1.0) points = -1.0;
   else points = -3.0;
 
-  // Final guard against 0
-  if (points === 0) points = -0.1;
+  // Final guard against exactly 0.0
+  if (points === 0) points = 0.10;
 
   return { zScore, points };
 }
@@ -223,22 +223,22 @@ export function calculateBoundaryReversal(yPercent: number) {
   let label = "NEUTRAL (CENTER)";
 
   if (yPercent >= 85) {
-    bearPoints = 2.5; // Price is at top, favor DOWN
+    bearPoints = 3.0; // Price is at top, favor DOWN
     label = "EXTREME HIGH (DANGER)";
   } else if (yPercent <= 15) {
-    bullPoints = 2.5; // Price is at bottom, favor UP
+    bullPoints = 3.0; // Price is at bottom, favor UP
     label = "EXTREME LOW (OVERSOLD)";
   } else if (yPercent >= 75) {
-    bearPoints = 1.5;
+    bearPoints = 2.0;
     label = "HIGH RANGE";
   } else if (yPercent <= 25) {
-    bullPoints = 1.5;
+    bullPoints = 2.0;
     label = "LOW RANGE";
   } else if (yPercent >= 65) {
-    bearPoints = 0.5;
+    bearPoints = 1.0;
     label = "MID-HIGH RANGE";
   } else if (yPercent <= 35) {
-    bullPoints = 0.5;
+    bullPoints = 1.0;
     label = "MID-LOW RANGE";
   }
 

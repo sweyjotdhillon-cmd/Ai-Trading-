@@ -54,10 +54,11 @@ async function callModel(params: {
     payload.response_format = { type: "json_object" };
   }
 
-  let retries = 1; // Only 1 retry before failing over to the next model in the chain
-  let delay = 1000;
+  let networkRetries = 1; // General fetch errors
+  let rateLimitRetries = 4; // Specifically for 429's
+  let delay = 3000;
 
-  while (retries >= 0) {
+  while (networkRetries >= 0 && rateLimitRetries >= 0) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s per individual call limit
     try {
@@ -75,14 +76,14 @@ async function callModel(params: {
       );
 
     if (response.status === 429) {
-      if (retries === 0) {
+      if (rateLimitRetries === 0) {
         throw new Error(`GitHub Models API Rate Limit Exceeded (429). Please wait a moment before trying again.`);
       }
-      const jitter = 200 + Math.floor(Math.random() * 1000);
-      const totalDelay = Math.min(delay + jitter, 10000); // Cap retry delay at 10 seconds
-      console.warn(`Rate limited (429). Retrying in ${totalDelay}ms... (${retries} retries left)`);
+      const jitter = 500 + Math.floor(Math.random() * 2000);
+      const totalDelay = Math.min(delay + jitter, 15000); // Cap retry delay at 15 seconds
+      console.warn(`Rate limited (429). Retrying in ${totalDelay}ms... (${rateLimitRetries} rate-limit retries left)`);
       await new Promise(resolve => setTimeout(resolve, totalDelay));
-      retries--;
+      rateLimitRetries--;
       delay *= 1.5; 
       continue;
     }
@@ -103,13 +104,13 @@ async function callModel(params: {
       if (err.name === 'AbortError' || msg.includes('aborted') || msg.includes('abort')) {
         throw new Error("GitHub Models API Request Timed Out (240s).");
       }
-      if (retries === 0) {
+      if (networkRetries === 0) {
         throw err;
       }
-      console.warn(`Fetch error, retrying (${retries} left):`, err.message);
+      console.warn(`Fetch error, retrying (${networkRetries} left):`, err.message);
       // Wait longer for non-429 errors
       await new Promise(resolve => setTimeout(resolve, delay * 2));
-      retries--;
+      networkRetries--;
       delay *= 1.5;
       continue;
     } finally {
@@ -460,7 +461,7 @@ async function startServer() {
       }
 
       const statScoresContext = `
-JUDGE 3 (Z-Score): ${j3Result.zScore.toFixed(2)} -> ALREADY CALCULATED POINTS: ${j3Result.points.toFixed(1)} / 5.0
+JUDGE 3 (Z-Score): ${j3Result.zScore.toFixed(2)} -> ALREADY CALCULATED POINTS: ${j3Result.points.toFixed(1)} / 4.0
 JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED POINTS: Bull Gets +${boundaryResult.bullPoints.toFixed(1)}, Bear Gets +${boundaryResult.bearPoints.toFixed(1)}
 `;
 
@@ -472,18 +473,18 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
       const bearPrompt = BEAR_PROMPT.replace('{{STRUCTURAL_PRIORS}}', visionStructuralPriors) + dataContext;
       const skepticPrompt = SKEPTIC_PROMPT + `\nGEOMETRIC ORACLES: ${visionGeometricOracles}` + dataContext;
 
-      // Parallelize core arguments with STAGGERED starts to avoid burst rate limits
+      // Parallelize core arguments with INCREASED STAGGERED starts to avoid burst rate limits
       const agentResults = await Promise.allSettled([
         (async () => {
           // No delay for bull
           return safeCall(bullPrompt, undefined, true, isHighReq);
         })(),
         (async () => {
-          await new Promise(r => setTimeout(r, 4000)); // 4s stagger
+          await new Promise(r => setTimeout(r, 6000)); // 6s stagger
           return safeCall(bearPrompt, undefined, true, isHighReq);
         })(),
         (async () => {
-          await new Promise(r => setTimeout(r, 8000)); // 8s stagger
+          await new Promise(r => setTimeout(r, 12000)); // 12s stagger
           return safeCall(skepticPrompt, undefined, true, isHighReq);
         })()
       ]);
