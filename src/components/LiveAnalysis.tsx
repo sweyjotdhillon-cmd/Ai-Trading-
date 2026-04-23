@@ -29,6 +29,19 @@ import {
 } from 'lucide-react';
 import tw from 'twrnc';
 
+type JudgeKey = 'system' | 'judge1' | 'judge2' | 'judge3' | 'judge4';
+type JudgeStatus = 'idle' | 'queued' | 'active' | 'done';
+type JudgeLog = { text: string; status: JudgeStatus; phase: string };
+
+const JUDGE_ORDER: JudgeKey[] = ['system', 'judge1', 'judge2', 'judge3', 'judge4'];
+const JUDGE_META: Record<JudgeKey, { label: string; color: string; bg: string; lane: string }> = {
+  system: { label: 'System Context', color: '#00FFFF', bg: 'rgba(0, 255, 255, 0.05)', lane: 'Ingestion' },
+  judge1: { label: 'Judge 1 · Bull Case', color: '#A855F7', bg: 'rgba(168, 85, 247, 0.08)', lane: 'Debate Lane A' },
+  judge2: { label: 'Judge 2 · Bear Case', color: '#F43F5E', bg: 'rgba(244, 63, 94, 0.08)', lane: 'Debate Lane B' },
+  judge3: { label: 'Judge 3 · Risk Filter', color: '#22C55E', bg: 'rgba(34, 197, 94, 0.08)', lane: 'Risk Gate' },
+  judge4: { label: 'Judge 4 · Boundary Gate', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.08)', lane: 'Structure Gate' }
+};
+
 const JUDGE_TASKS = {
   judge1: ["Scanning support nodes...", "Evaluating volume nodes...", "Mapping price patterns...", "Analyzing breakouts...", "Finalizing Bullish Case..."],
   judge2: ["Locating resistance zones...", "Analyzing selling pressure...", "Checking candle patterns...", "Projecting crash vectors...", "Finalizing Bearish Case..."],
@@ -36,6 +49,14 @@ const JUDGE_TASKS = {
   judge4: ["Locating chart boundaries...", "Detecting trend extremes...", "Scanning for exhaustion...", "Calculating reversal probability...", "Finalizing Boundary Verdict..."],
   system: ["Syncing live vision feed...", "Extracting OHLC data...", "Computing math oracles...", "Aligning market priors...", "Synthesizing full report..."]
 };
+
+const createInitialJudgeLogs = (): Record<JudgeKey, JudgeLog> => ({
+  system: { text: 'Awaiting context...', status: 'idle', phase: 'Idle' },
+  judge1: { text: 'Waiting to initiate...', status: 'idle', phase: 'Idle' },
+  judge2: { text: 'Waiting to initiate...', status: 'idle', phase: 'Idle' },
+  judge3: { text: 'Waiting to initiate...', status: 'idle', phase: 'Idle' },
+  judge4: { text: 'Waiting to initiate...', status: 'idle', phase: 'Idle' }
+});
 
 // Utility to downscale images on the web before sending to server
 const downscaleImage = (dataUrl: string, maxDim: number = 900): Promise<string> => {
@@ -91,13 +112,8 @@ export function LiveAnalysis() {
   const [scoutData, setScoutData] = useState<{action: string, reason: string} | null>(null);
 
   // Parallel Judge Logs
-  const [judgeLogs, setJudgeLogs] = useState({
-     judge1: { text: "Waiting to initiate...", status: 'idle' },
-     judge2: { text: "Waiting to initiate...", status: 'idle' },
-     judge3: { text: "Waiting to initiate...", status: 'idle' },
-     judge4: { text: "Locating boundaries...", status: 'idle' },
-     system: { text: "Awaiting context...", status: 'idle' }
-  });
+  const [judgeLogs, setJudgeLogs] = useState<Record<JudgeKey, JudgeLog>>(createInitialJudgeLogs);
+  const [flowProgress, setFlowProgress] = useState(0);
   
   // UX Error Handling
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -158,13 +174,8 @@ export function LiveAnalysis() {
     setScoutActive(false);
     setScoutData(null);
     
-    setJudgeLogs({
-      judge1: { text: "Standby...", status: 'idle' },
-      judge2: { text: "Standby...", status: 'idle' },
-      judge3: { text: "Standby...", status: 'idle' },
-      judge4: { text: "Standby...", status: 'idle' },
-      system: { text: "Standby...", status: 'idle' }
-    });
+    setJudgeLogs(createInitialJudgeLogs());
+    setFlowProgress(0);
 
     if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
@@ -425,6 +436,37 @@ export function LiveAnalysis() {
     }, 300);
   };
 
+  const updateFlowStage = (stage: number) => {
+    setFlowProgress(Math.min(100, 12 + stage * 19));
+    setJudgeLogs({
+      system: {
+        text: JUDGE_TASKS.system[stage],
+        status: stage >= 4 ? 'done' : 'active',
+        phase: stage <= 1 ? 'Data Sync' : stage === 2 ? 'Oracle Compute' : stage === 3 ? 'Context Merge' : 'Synthesis'
+      },
+      judge1: {
+        text: JUDGE_TASKS.judge1[stage],
+        status: stage === 0 ? 'queued' : stage >= 4 ? 'done' : 'active',
+        phase: stage <= 1 ? 'Evidence Build' : stage <= 3 ? 'Hypothesis Stress' : 'Final Verdict'
+      },
+      judge2: {
+        text: JUDGE_TASKS.judge2[stage],
+        status: stage === 0 ? 'queued' : stage >= 4 ? 'done' : 'active',
+        phase: stage <= 1 ? 'Evidence Build' : stage <= 3 ? 'Hypothesis Stress' : 'Final Verdict'
+      },
+      judge3: {
+        text: JUDGE_TASKS.judge3[stage],
+        status: stage <= 1 ? 'queued' : stage >= 4 ? 'done' : 'active',
+        phase: stage <= 1 ? 'Pending Risk Inputs' : stage === 2 ? 'Risk Scoring' : stage === 3 ? 'Leak Scan' : 'Final Verdict'
+      },
+      judge4: {
+        text: JUDGE_TASKS.judge4[stage],
+        status: stage <= 1 ? 'queued' : stage >= 4 ? 'done' : 'active',
+        phase: stage <= 1 ? 'Boundary Awaiting' : stage === 2 ? 'Range Model' : stage === 3 ? 'Reversal Probability' : 'Final Verdict'
+      },
+    });
+  };
+
   const handleAnalyze = async () => {
     let finalImageToAnalyze = selectedImage;
 
@@ -459,13 +501,14 @@ export function LiveAnalysis() {
     const optimizedImage = await downscaleImage(finalImageToAnalyze);
     const base64Data = optimizedImage.split(',')[1];
     
-    setJudgeLogs({
-      judge1: { text: "Initializing Deep Scan...", status: 'active' },
-      judge2: { text: "Initializing Deep Scan...", status: 'active' },
-      judge3: { text: "Initializing Deep Scan...", status: 'active' },
-      judge4: { text: "Initializing Deep Scan...", status: 'active' },
-      system: { text: "Injecting global context...", status: 'active' }
-    });
+      setFlowProgress(8);
+      setJudgeLogs({
+        system: { text: "Injecting global context...", status: 'active', phase: 'Bootstrapping' },
+        judge1: { text: "Queued for debate lane...", status: 'queued', phase: 'Queued' },
+        judge2: { text: "Queued for debate lane...", status: 'queued', phase: 'Queued' },
+        judge3: { text: "Queued for risk lane...", status: 'queued', phase: 'Queued' },
+        judge4: { text: "Queued for structure lane...", status: 'queued', phase: 'Queued' }
+      });
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
@@ -522,24 +565,17 @@ export function LiveAnalysis() {
 
       // 2. RUN SIMULATION (Progressively show what judges are doing)
       for (let i = 0; i <= 3; i++) {
-        setJudgeLogs({
-          judge1: { text: JUDGE_TASKS.judge1[i], status: 'active' },
-          judge2: { text: JUDGE_TASKS.judge2[i], status: 'active' },
-          judge3: { text: JUDGE_TASKS.judge3[i], status: 'active' },
-          judge4: { text: JUDGE_TASKS.judge4[i], status: 'active' },
-          system: { text: JUDGE_TASKS.system[i], status: 'active' },
-        });
+        updateFlowStage(i);
         await new Promise(r => setTimeout(r, 2000));
       }
 
       setAnalysisStep(`FINALIZING VERDICT (${techniquesList.length} TECHNIQUES AUDITED)`);
-      setJudgeLogs({
-        judge1: { text: JUDGE_TASKS.judge1[4], status: 'active' },
-        judge2: { text: JUDGE_TASKS.judge2[4], status: 'active' },
-        judge3: { text: JUDGE_TASKS.judge3[4], status: 'active' },
-        judge4: { text: JUDGE_TASKS.judge4[4], status: 'active' },
-        system: { text: "Simultaneously synthesizing neural nodes...", status: 'active' },
-      });
+      updateFlowStage(4);
+      setFlowProgress(92);
+      setJudgeLogs(prev => ({
+        ...prev,
+        system: { text: "Simultaneously synthesizing neural nodes...", status: 'active', phase: 'Final Arbitration' }
+      }));
 
       const minTimer = new Promise(r => setTimeout(r, 7000));
       const [response] = await Promise.all([apiCall, minTimer]) as [Response, any];
@@ -555,12 +591,13 @@ export function LiveAnalysis() {
       if (data && data.judge) {
         setLoading(false); // CLOSE LOADING IMMEDIATELY ON SUCCESS
         setJudgeLogs({
-          judge1: { text: `Bull: ${(data.bull?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
-          judge2: { text: `Bear: ${(data.bear?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
-          judge3: { text: `Risk: ${(data.skeptic?.riskVerdict || data.skeptic?.skepticVerdict || "Analyzing...").substring(0, 30)}...`, status: 'done' },
-          judge4: { text: `Boundary: ${data.judge?.ruling?.substring(0, 30) || "Detected"}...`, status: 'done' },
-          system: { text: `${data.techUsedCount} Patterns Identified ✅`, status: 'done' }
+          system: { text: `${data.techUsedCount} Patterns Identified ✅`, status: 'done', phase: 'Synthesis Complete' },
+          judge1: { text: `Bull: ${(data.bull?.reasoning || "Analyzing...").substring(0, 40)}...`, status: 'done', phase: 'Case Closed' },
+          judge2: { text: `Bear: ${(data.bear?.reasoning || "Analyzing...").substring(0, 40)}...`, status: 'done', phase: 'Case Closed' },
+          judge3: { text: `Risk: ${(data.skeptic?.riskVerdict || data.skeptic?.skepticVerdict || "Analyzing...").substring(0, 40)}...`, status: 'done', phase: 'Risk Finalized' },
+          judge4: { text: `Boundary: ${data.judge?.ruling?.substring(0, 40) || "Detected"}...`, status: 'done', phase: 'Structure Finalized' }
         });
+        setFlowProgress(100);
         
         setAnalysisStep(`Analysis Complete: ${data.techUsedCount}/${techniquesList.length} Techniques Found`);
         
@@ -634,6 +671,7 @@ export function LiveAnalysis() {
       setAnalysisError(msg);
       setTradingPhase('IDLE');
       setLoading(false);
+      setFlowProgress(0);
     }
     }, 10);
   };
@@ -940,47 +978,56 @@ export function LiveAnalysis() {
               />
             </div>
 
-            <div style={tw`flex-row items-center justify-between mb-4 border-b border-white/10 pb-3 relative z-10`}>
+            <div style={tw`flex-row items-center justify-between mb-3 relative z-10`}>
               <div style={tw`flex-row items-center gap-2`}>
                  <ActivityIndicator color="#D9B382" size="small" />
                  <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 10, color: '#D9B382' }]}>
-                   {analysisStep || 'Live Neural Debate Active'}
+                   {analysisStep || 'Structured arbitration pipeline active'}
                  </Text>
               </div>
-              <Text style={[tw`tracking-widest uppercase`, { fontSize: 8, color: '#8B95B0' }]}>Simultaneous execution</Text>
+              <Text style={[tw`tracking-widest uppercase`, { fontSize: 8, color: '#8B95B0' }]}>{flowProgress}%</Text>
             </div>
 
-            <div style={tw`gap-3 relative z-10`}>
-              {[
-                { key: 'system', label: 'System Context', color: '#00FFFF', bg: 'rgba(0, 255, 255, 0.05)' },
-                { key: 'judge1', label: 'Judge 1: Bull Consensus', color: '#FF00FF', bg: 'rgba(255, 0, 255, 0.05)' },
-                { key: 'judge2', label: 'Judge 2: Bear Pressure', color: '#FF1493', bg: 'rgba(255, 20, 147, 0.05)' },
-                { key: 'judge3', label: 'Judge 3: Risk Filter', color: '#39FF14', bg: 'rgba(57, 255, 20, 0.05)' },
-                { key: 'judge4', label: 'Judge 4: Reversal Gate', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.05)' }
-              ].map((item, idx) => (
+            <div style={tw`h-1.5 w-full bg-black/70 rounded-full overflow-hidden mb-4 relative z-10`}>
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${flowProgress}%` }}
+                transition={{ duration: 0.6 }}
+                className="h-full rounded-full"
+                style={{ background: 'linear-gradient(90deg, #00FFFF 0%, #D9B382 55%, #22C55E 100%)' }}
+              />
+            </div>
+
+            <div style={tw`flex-row flex-wrap gap-2 relative z-10`}>
+              {JUDGE_ORDER.map((key, idx) => {
+                const item = JUDGE_META[key];
+                const current = judgeLogs[key];
+                return (
                 <motion.div
-                  key={item.key}
+                  key={key}
                   initial={{ x: -20, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
                   transition={{ delay: idx * 0.1 }}
-                  className="bg-black/80 p-3 rounded-lg flex-row items-center justify-between border-l-4"
-                  style={{ borderColor: item.color, backgroundColor: item.bg }}
+                  className="bg-black/80 p-3 rounded-lg border-l-4 w-[48.5%] min-w-[240px]"
+                  style={{ borderColor: item.color, backgroundColor: item.bg, flexGrow: key === 'system' ? 1 : undefined }}
                 >
                   <div style={tw`flex-1`}>
-                    <div className="flex flex-row items-center gap-2 mb-1">
+                    <div className="flex flex-row items-center justify-between gap-2 mb-1">
                       <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.color }} />
-                      <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 9, color: item.color }]}>{item.label}</Text>
+                      <Text style={[tw`font-black uppercase tracking-widest flex-1`, { fontSize: 9, color: item.color }]}>{item.label}</Text>
+                      <Text style={tw`text-[8px] text-[#8B95B0] font-black uppercase`}>{item.lane}</Text>
                     </div>
+                    <Text style={tw`text-[8px] text-[#D1D5DB] uppercase tracking-widest mb-1`}>{current.phase}</Text>
                     <motion.p
-                      key={judgeLogs[item.key as keyof typeof judgeLogs].text}
+                      key={current.text}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       className="text-white font-bold text-xs"
                     >
-                      {judgeLogs[item.key as keyof typeof judgeLogs].text}
+                      {current.text}
                     </motion.p>
                   </div>
-                  {judgeLogs[item.key as keyof typeof judgeLogs].status === 'done' ? (
+                  {current.status === 'done' ? (
                     <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="ml-2">
                       <Check size={16} color={item.color} />
                     </motion.div>
@@ -997,7 +1044,8 @@ export function LiveAnalysis() {
                     </div>
                   )}
                 </motion.div>
-              ))}
+                );
+              })}
             </div>
           </motion.div>
         ) : (
