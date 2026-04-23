@@ -229,7 +229,8 @@ async function startServer() {
         const flow = calculateHamiltonianFlow(priceHistory[priceHistory.length-1], priceHistory[priceHistory.length-1] - (priceHistory[priceHistory.length-2] || priceHistory[priceHistory.length-1]));
         
         // Wasserstein similarity to a "perfect" trend prototype (linear sequence)
-        const perfectTrend = Array.from({ length: priceHistory.length }, (_, i) => priceHistory[0] + (priceHistory[priceHistory.length-1] - priceHistory[0]) * (i / (priceHistory.length - 1)));
+        const trendSteps = Math.max(1, priceHistory.length - 1);
+        const perfectTrend = Array.from({ length: priceHistory.length }, (_, i) => priceHistory[0] + (priceHistory[priceHistory.length-1] - priceHistory[0]) * (i / trendSteps));
         const wasserstein = calculateWassersteinSimilarity(priceHistory, perfectTrend);
 
         geometricOracles = `
@@ -438,7 +439,8 @@ async function startServer() {
         const rqa = calculateRQA(priceHistory);
         const tda = calculatePersistentEntropy(priceHistory);
         const flow = calculateHamiltonianFlow(priceHistory[priceHistory.length-1], priceHistory[priceHistory.length-1] - (priceHistory[priceHistory.length-2] || priceHistory[priceHistory.length-1]));
-        const perfectTrend = Array.from({ length: priceHistory.length }, (_, i) => priceHistory[0] + (priceHistory[priceHistory.length-1] - priceHistory[0]) * (i / (priceHistory.length - 1)));
+        const trendSteps = Math.max(1, priceHistory.length - 1);
+        const perfectTrend = Array.from({ length: priceHistory.length }, (_, i) => priceHistory[0] + (priceHistory[priceHistory.length-1] - priceHistory[0]) * (i / trendSteps));
         const wasserstein = calculateWassersteinSimilarity(priceHistory, perfectTrend);
 
         visionGeometricOracles = `
