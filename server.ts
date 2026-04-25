@@ -393,13 +393,14 @@ async function startServer() {
         low: Number(c.low || 0)
       }));
 
-      let bodies = extractedData.candleBodies || ohlc.map((c: any) => ({ open: c.open, close: c.close }));
+      let bodies = extractedData.candleBodies || [];
       if (bodies.length > 0 && typeof bodies[0] === 'number') {
-        bodies = bodies.map((b: number) => ({ open: 0, close: b }));
+        bodies = bodies.map((b: number) => ({ open: 0, close: b, high: b, low: 0 }));
       }
-
-      const j3Result = calculateZScoreSignificance(bodies);
-      const boundaryResult = calculateBoundaryReversal(Number(extractedData.priceYPercent || 50));
+      
+      const zScoreCandles = (ohlc && ohlc.length >= 3) ? ohlc : bodies;
+      const j3Result = calculateZScoreSignificance(zScoreCandles);
+      const boundaryResult = calculateBoundaryReversal(Number(extractedData.priceYPercent || 50), ohlc);
 
       // --- NEW: Calculate Advanced Metrics from Vision Data ---
       let visionStructuralPriors = structuralPriors || "";
@@ -461,7 +462,13 @@ async function startServer() {
       }
 
       const statScoresContext = `
-JUDGE 3 (Z-Score): ${j3Result.zScore.toFixed(2)} -> ALREADY CALCULATED POINTS: ${j3Result.points.toFixed(1)} / 4.0
+JUDGE 3 (Z-Score Candle Significance):
+  - Z-Score: ${j3Result.zScore.toFixed(2)}
+  - Signal Type: ${j3Result.signalType || 'UNKNOWN'}
+  - Direction of significant candle: ${j3Result.direction || 'NEUTRAL'}
+  - BULL gets: ${(j3Result.bullPoints || 0).toFixed(2)} pts
+  - BEAR gets: ${(j3Result.bearPoints || 0).toFixed(2)} pts
+  (Max 4.0 each. Negative = counter-signal penalty.)
 JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED POINTS: Bull Gets +${boundaryResult.bullPoints.toFixed(1)}, Bear Gets +${boundaryResult.bearPoints.toFixed(1)}
 `;
 

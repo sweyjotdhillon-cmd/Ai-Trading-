@@ -174,42 +174,178 @@ export function calculateHamiltonianFlow(price: number, momentum: number, steps 
 }
 
 /**
- * Judge 3: Z-Score Candle Significance
- * Measures if the current move is statistically significant.
+ * Judge 3 — Enhanced Z-Score Candle Significance
+ * Fixes:
+ * 1. Continuous scoring (no cliff edges)
+ * 2. Directional output (bullish vs bearish significance)
+ * 3. Full candle analysis (body + wicks)
+ * 4. Absolute floor (relative significance needs a minimum absolute size)
+ * 5. Composite signal type detection (pin bar, engulfing, doji)
  */
-export function calculateZScoreSignificance(candles: { open: number, close: number }[]) {
-  if (candles.length < 3) return { zScore: 0, points: -1.0 }; // Cannot evaluate short data, return negative penalty
+export function calculateZScoreSignificance(
+  candles: { open: number; close: number; high?: number; low?: number }[]
+) {
+  if (candles.length < 3) return {
+    zScore: 0, points: -1.0,
+    direction: 'NEUTRAL', signalType: 'INSUFFICIENT_DATA',
+    bullPoints: -0.5, bearPoints: -0.5
+  };
 
   const lookback = Math.min(candles.length, 21);
-  const bodies = candles.slice(-lookback, -1).map(c => Math.abs(c.close - c.open));
-  
-  // If we only had 3 candles, bodies.length might be 2. Let's make sure it doesn't divide by zero
-  if (bodies.length === 0) return { zScore: 0, points: -1.0 };
+  const history = candles.slice(-lookback, -1);
+  const current = candles[candles.length - 1];
 
-  const currentBody = Math.abs(candles[candles.length - 1].close - candles[candles.length - 1].open);
-  
-  const mean = bodies.reduce((a, b) => a + b, 0) / bodies.length;
-  // Use Bessel's correction for unbiased sample standard deviation
-  const variance = bodies.length > 1 
-    ? bodies.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (bodies.length - 1)
+  // ── 1. FULL CANDLE METRICS (not just body) ─────────────────────────────
+  // Total range = high - low (the full candle, including wicks)
+  // Body = |close - open|
+  // Upper wick = high - max(open, close)
+  // Lower wick = min(open, close) - low
+
+  const getMetrics = (c: typeof current) => {
+    const body = Math.abs(c.close - c.open);
+    const high = c.high ?? Math.max(c.open, c.close);
+    const low = c.low ?? Math.min(c.open, c.close);
+    const totalRange = Math.max(high - low, body); // at minimum equals body
+    const upperWick = high - Math.max(c.open, c.close);
+    const lowerWick = Math.min(c.open, c.close) - low;
+    const bodyRatio = totalRange > 0 ? body / totalRange : 1; // 0=all wick, 1=all body
+    return { body, totalRange, upperWick, lowerWick, bodyRatio };
+  };
+
+  const histMetrics = history.map(getMetrics);
+  const currMetrics = getMetrics(current);
+
+  // ── 2. Z-SCORE ON TOTAL RANGE (not just body) ──────────────────────────
+  // Total range captures the full energy of the candle including wicks
+  const historicalRanges = histMetrics.map(m => m.totalRange);
+  const mean = historicalRanges.reduce((a, b) => a + b, 0) / historicalRanges.length;
+  const variance = historicalRanges.length > 1
+    ? historicalRanges.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (historicalRanges.length - 1)
     : 0;
   const stdDev = Math.sqrt(variance);
-  
-  const zScore = stdDev === 0 ? 0 : (currentBody - mean) / stdDev;
-  
-  let points = 0.10; // Moderate default value as per prompt instructions
-  if (zScore >= 2.0) points = 4.0;
-  else if (zScore >= 1.5) points = 3.0;
-  else if (zScore >= 1.0) points = 2.0;
-  else if (zScore >= 0.5) points = 1.0;
-  else if (zScore > 0.0) points = 0.10;
-  else if (zScore > -1.0) points = -1.0;
-  else points = -3.0;
+  const zScore = stdDev === 0 ? 0 : (currMetrics.totalRange - mean) / stdDev;
 
-  // Final guard against exactly 0.0
-  if (points === 0) points = 0.10;
+  // ── 3. ABSOLUTE SIZE FLOOR ──────────────────────────────────────────────
+  // Prevent a micro-move from scoring high just because everything else was flat.
+  // If the current candle's range is less than 0.1% of the mean close price,
+  // it's not meaningful regardless of relative z-score.
+  const avgClose = history.reduce((a, c) => a + c.close, 0) / history.length;
+  const absoluteFloor = avgClose * 0.001; // 0.1% of price
+  const absolutelySignificant = currMetrics.totalRange > absoluteFloor;
 
-  return { zScore, points };
+  // ── 4. SIGNAL TYPE DETECTION ────────────────────────────────────────────
+  // Classify the current candle pattern — determines direction of significance
+  const isBullishBody = current.close > current.open;
+  const isBearishBody = current.close < current.open;
+
+  // Pin bar: body < 30% of range AND wick in one direction > 50% of range
+  const isPinBarBull = currMetrics.bodyRatio < 0.3 && currMetrics.lowerWick > (currMetrics.totalRange * 0.5);
+  const isPinBarBear = currMetrics.bodyRatio < 0.3 && currMetrics.upperWick > (currMetrics.totalRange * 0.5);
+
+  // Doji: body < 10% of range → indecision, weakens both sides
+  const isDoji = currMetrics.bodyRatio < 0.10;
+
+  // Strong momentum candle: body > 70% of range
+  const isStrongBody = currMetrics.bodyRatio > 0.70;
+
+  type SignalType = 'BULL_MOMENTUM' | 'BEAR_MOMENTUM' | 'BULL_PINBAR' | 'BEAR_PINBAR' | 'DOJI' | 'MIXED' | 'INSUFFICIENT_DATA';
+  let signalType: SignalType = 'MIXED';
+  let direction: 'BULL' | 'BEAR' | 'NEUTRAL' = 'NEUTRAL';
+
+  if (isDoji) {
+    signalType = 'DOJI';
+    direction = 'NEUTRAL';
+  } else if (isPinBarBull) {
+    signalType = 'BULL_PINBAR';
+    direction = 'BULL';
+  } else if (isPinBarBear) {
+    signalType = 'BEAR_PINBAR';
+    direction = 'BEAR';
+  } else if (isStrongBody && isBullishBody) {
+    signalType = 'BULL_MOMENTUM';
+    direction = 'BULL';
+  } else if (isStrongBody && isBearishBody) {
+    signalType = 'BEAR_MOMENTUM';
+    direction = 'BEAR';
+  } else if (isBullishBody) {
+    direction = 'BULL';
+  } else if (isBearishBody) {
+    direction = 'BEAR';
+  }
+
+  // ── 5. CONTINUOUS POINT SCORING ─────────────────────────────────────────
+  // Replace discrete cliff-edge bands with a smooth tanh curve.
+  // tanh naturally saturates near 1.0 and is smooth everywhere.
+  // Scale to 0–4 range to match Judge scoring max.
+  //
+  //   score = 4.0 * tanh(max(0, zScore) / 2.0)
+  //
+  // This gives:
+  //   zScore 0.0  → 0.00 pts
+  //   zScore 0.5  → 0.95 pts
+  //   zScore 1.0  → 1.75 pts
+  //   zScore 1.5  → 2.41 pts
+  //   zScore 2.0  → 2.93 pts
+  //   zScore 3.0  → 3.63 pts  (never actually hits 4.0 — prevents gaming)
+  const tanh = (x: number) => (Math.exp(x) - Math.exp(-x)) / (Math.exp(x) + Math.exp(-x));
+  const rawScore = zScore > 0 ? 4.0 * tanh(zScore / 2.0) : 0;
+
+  // Apply absolute floor penalty
+  const absolutePenalty = absolutelySignificant ? 1.0 : 0.3;
+  const baseScore = rawScore * absolutePenalty;
+
+  // Doji gets a flat weak penalty to both sides (indecision)
+  if (isDoji) {
+    return {
+      zScore: parseFloat(zScore.toFixed(3)),
+      points: -0.5,
+      bullPoints: -0.5,
+      bearPoints: -0.5,
+      direction: 'NEUTRAL' as const,
+      signalType: 'DOJI' as SignalType,
+      breakdown: { body: currMetrics.body, totalRange: currMetrics.totalRange, bodyRatio: currMetrics.bodyRatio }
+    };
+  }
+
+  // Negative z-score (smaller-than-average candle) = mild penalty
+  const negativeScore = zScore <= 0 ? Math.max(-1.5, zScore * 0.5) : 0;
+
+  // ── 6. DIRECTIONAL POINT ASSIGNMENT ────────────────────────────────────
+  // Winner direction gets the positive score.
+  // Loser direction gets a mild negative (the significant move went against them).
+  let bullPoints: number;
+  let bearPoints: number;
+
+  if (zScore <= 0) {
+    bullPoints = parseFloat(Math.max(negativeScore, -0.5).toFixed(2));
+    bearPoints = parseFloat(Math.max(negativeScore, -0.5).toFixed(2));
+  } else if (direction === 'BULL') {
+    bullPoints = parseFloat(Math.max(0.10, Math.min(4.0, baseScore)).toFixed(2));
+    bearPoints = parseFloat(Math.max(-1.5, -(baseScore * 0.4)).toFixed(2)); // counter-signal penalty
+  } else if (direction === 'BEAR') {
+    bearPoints = parseFloat(Math.max(0.10, Math.min(4.0, baseScore)).toFixed(2));
+    bullPoints = parseFloat(Math.max(-1.5, -(baseScore * 0.4)).toFixed(2));
+  } else {
+    bullPoints = parseFloat(Math.max(negativeScore, -0.5).toFixed(2));
+    bearPoints = parseFloat(Math.max(negativeScore, -0.5).toFixed(2));
+  }
+
+  return {
+    zScore: parseFloat(zScore.toFixed(3)),
+    points: direction === 'BULL' ? bullPoints : direction === 'BEAR' ? bearPoints : negativeScore,
+    bullPoints,
+    bearPoints,
+    direction,
+    signalType,
+    breakdown: {
+      body: parseFloat(currMetrics.body.toFixed(6)),
+      totalRange: parseFloat(currMetrics.totalRange.toFixed(6)),
+      bodyRatio: parseFloat(currMetrics.bodyRatio.toFixed(3)),
+      upperWick: parseFloat(currMetrics.upperWick.toFixed(6)),
+      lowerWick: parseFloat(currMetrics.lowerWick.toFixed(6)),
+      absolutelySignificant,
+    }
+  };
 }
 
 /**
@@ -217,32 +353,102 @@ export function calculateZScoreSignificance(candles: { open: number, close: numb
  * Gives extra weight to reversals when price is at the extreme edges of the chart.
  * @param yPercent 0 (bottom of chart/lowest price) to 100 (top of chart/highest price)
  */
-export function calculateBoundaryReversal(yPercent: number) {
+export function calculateBoundaryReversal(
+  yPercent: number,
+  ohlc?: { open: number; high: number; low: number; close: number }[]
+) {
   let bullPoints = 0;
   let bearPoints = 0;
   let label = "NEUTRAL (CENTER)";
 
-  if (yPercent >= 85) {
+  let effectiveY = yPercent;
+  let momentumMultiplier = 1.0;
+  let wickMultiplier = 1.0;
+  let stateDesc = "";
+
+  if (ohlc && ohlc.length >= 3) {
+    const highs = ohlc.map(c => c.high);
+    const lows = ohlc.map(c => c.low);
+    const maxH = Math.max(...highs);
+    const minL = Math.min(...lows);
+    const currentClose = ohlc[ohlc.length - 1].close;
+
+    // 1. Zoom/Scale Independence: Combine visual Y with mathematical Stochastic Y
+    if (maxH !== minL) {
+      const mathY = ((currentClose - minL) / (maxH - minL)) * 100;
+      effectiveY = (yPercent * 0.3) + (mathY * 0.7); // 70% weight to actual math structure
+    }
+
+    // 2. Momentum / Velocity Consideration
+    const recentCandle = ohlc[ohlc.length - 1];
+    const recentBody = Math.abs(recentCandle.close - recentCandle.open);
+    
+    let avgBody = 0;
+    for (let i = 0; i < ohlc.length - 1; i++) {
+      avgBody += Math.abs(ohlc[i].close - ohlc[i].open);
+    }
+    avgBody = avgBody / (ohlc.length - 1);
+
+    if (avgBody > 0 && recentBody > avgBody * 2.0) {
+      momentumMultiplier = 1.5; // Exhaustion spike
+      stateDesc += " (Exhaustion Spike)";
+    } else if (avgBody > 0 && recentBody < avgBody * 0.5) {
+      momentumMultiplier = 0.5; // Slow drift has lower reversal chance
+      stateDesc += " (Slow Drift)";
+    }
+
+    // 3. Wick Rejection Evidence
+    const upperWick = recentCandle.high - Math.max(recentCandle.open, recentCandle.close);
+    const lowerWick = Math.min(recentCandle.open, recentCandle.close) - recentCandle.low;
+    
+    if (effectiveY >= 70) {
+      if (upperWick > recentBody * 1.5) {
+        wickMultiplier = 1.5;
+        stateDesc += " [Heavy Upper Rejection]";
+      } else if (recentCandle.close >= recentCandle.open && upperWick <= recentBody * 0.2) {
+        wickMultiplier = 0.0; // Clean close at the top implies continuation, block the reversal setup
+        stateDesc += " [Clean Bullish Close -> Continuation Breakout Blocked]";
+      }
+    } else if (effectiveY <= 30) {
+      if (lowerWick > recentBody * 1.5) {
+        wickMultiplier = 1.5;
+        stateDesc += " [Heavy Lower Rejection]";
+      } else if (recentCandle.open >= recentCandle.close && lowerWick <= recentBody * 0.2) {
+        wickMultiplier = 0.0; // Clean close at bottom implies continuation
+        stateDesc += " [Clean Bearish Close -> Continuation Breakdown Blocked]";
+      }
+    }
+  }
+
+  if (effectiveY >= 85) {
     bearPoints = 3.0; // Price is at top, favor DOWN
     label = "EXTREME HIGH (DANGER)";
-  } else if (yPercent <= 15) {
+  } else if (effectiveY <= 15) {
     bullPoints = 3.0; // Price is at bottom, favor UP
     label = "EXTREME LOW (OVERSOLD)";
-  } else if (yPercent >= 75) {
+  } else if (effectiveY >= 75) {
     bearPoints = 2.0;
     label = "HIGH RANGE";
-  } else if (yPercent <= 25) {
+  } else if (effectiveY <= 25) {
     bullPoints = 2.0;
     label = "LOW RANGE";
-  } else if (yPercent >= 65) {
+  } else if (effectiveY >= 65) {
     bearPoints = 1.0;
     label = "MID-HIGH RANGE";
-  } else if (yPercent <= 35) {
+  } else if (effectiveY <= 35) {
     bullPoints = 1.0;
     label = "MID-LOW RANGE";
   }
 
-  return { bullPoints, bearPoints, label, yPercent };
+  // Apply multipliers
+  bullPoints = Math.min(bullPoints * momentumMultiplier * wickMultiplier, 3.0);
+  bearPoints = Math.min(bearPoints * momentumMultiplier * wickMultiplier, 3.0);
+
+  if (stateDesc) {
+    label += stateDesc;
+  }
+
+  return { bullPoints, bearPoints, label, yPercent: effectiveY };
 }
 
 /**

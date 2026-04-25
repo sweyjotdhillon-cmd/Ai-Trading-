@@ -70,7 +70,7 @@ JUDGE 3 — Statistical Z-Score (Max: 4 pts) - DATA PROVIDED
 JUDGE 4 — Trend Reversal Boundary (Max: 3 pts) - DATA PROVIDED
 
 CRITICAL: You MUST use the EXACT points provided in the "SCORING DATA PROVIDED" section for J3 and J4. 
-Do not hallucinate or modify J3 or J4 points. If the data provides 0.0 for J4, you MUST use 0.0. 
+Do not hallucinate or modify J3 or J4 points. If the data provides 0.0 or negative points (e.g. -0.5) for a side, you MUST write it exactly as provided (e.g., 0.0/4 or -0.5/4).
 For J1 and J2, do not award exactly 0.0 points.
 
 ─────────────────────────────────────
