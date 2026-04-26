@@ -12,7 +12,6 @@ import {
   calculateRQA,
   calculatePersistentEntropy,
   calculateHamiltonianFlow,
-  calculateZScoreSignificance,
   calculateBoundaryReversal
 } from "./src/utils/mathEngine.ts";
 
@@ -54,13 +53,13 @@ async function callModel(params: {
     payload.response_format = { type: "json_object" };
   }
 
-  let networkRetries = 1; // General fetch errors
-  let rateLimitRetries = 4; // Specifically for 429's
+  let networkRetries = 2; // General fetch errors
+  let rateLimitRetries = 6; // Increased specifically for GitHub burst limits
   let delay = 3000;
 
   while (networkRetries >= 0 && rateLimitRetries >= 0) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s per individual call limit
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s per individual call limit
     try {
       const response = await fetch(
         endpoint,
@@ -77,11 +76,11 @@ async function callModel(params: {
 
     if (response.status === 429) {
       if (rateLimitRetries === 0) {
-        throw new Error(`GitHub Models API Rate Limit Exceeded (429). Please wait a moment before trying again.`);
+        throw new Error(`GitHub Models API Rate Limit Exceeded (429) after all retries. Please wait 30+ seconds.`);
       }
-      const jitter = 500 + Math.floor(Math.random() * 2000);
-      const totalDelay = Math.min(delay + jitter, 15000); // Cap retry delay at 15 seconds
-      console.warn(`Rate limited (429). Retrying in ${totalDelay}ms... (${rateLimitRetries} rate-limit retries left)`);
+      const jitter = 1000 + Math.floor(Math.random() * 3000);
+      const totalDelay = Math.min(delay + jitter, 30000); // Cap retry delay at 30 seconds
+      console.warn(`Rate limited (429). Retrying in ${totalDelay}ms... (${rateLimitRetries} retries left)`);
       await new Promise(resolve => setTimeout(resolve, totalDelay));
       rateLimitRetries--;
       delay *= 1.5; 
@@ -94,20 +93,34 @@ async function callModel(params: {
       try { errorJson = JSON.parse(errText); } catch { /* ignore parse error */ }
       const msg = errorJson?.error?.message || errorJson?.error || errText || response.statusText;
       console.error(`GitHub API Error (${response.status}):`, msg);
-      throw new Error(`GitHub Models API Error: ${msg}`);
+      
+      // If it's a 4xx error (other than 429), don't retry as it's likely a permanent error (e.g. bad prompt/image)
+      if (response.status >= 400 && response.status < 500) {
+        throw new Error(`GitHub Models API Error: ${msg}`);
+      }
+      
+      // For 5xx errors, allow falling through to catch block for network retry
+      throw new Error(`GitHub Models API Temporary Error (${response.status}): ${msg}`);
     }
 
     const result = await response.json();
     return result.choices[0].message.content || "";
     } catch (err: any) {
       const msg = err?.message || "";
-      if (err.name === 'AbortError' || msg.includes('aborted') || msg.includes('abort')) {
-        throw new Error("GitHub Models API Request Timed Out (240s).");
+      
+      // If the error was explicitly thrown as a persistent 429 or 4xx, rethrow it without using networkRetries
+      if (msg.includes("Rate Limit Exceeded") || msg.includes("API Error:")) {
+        throw err;
       }
+
+      if (err.name === 'AbortError' || msg.includes('aborted') || msg.includes('abort')) {
+        throw new Error("GitHub Models API Request Timed Out (60s call limit reached).");
+      }
+
       if (networkRetries === 0) {
         throw err;
       }
-      console.warn(`Fetch error, retrying (${networkRetries} left):`, err.message);
+      console.warn(`System noise/Fetch error, retrying (${networkRetries} left):`, err.message);
       // Wait longer for non-429 errors
       await new Promise(resolve => setTimeout(resolve, delay * 2));
       networkRetries--;
@@ -186,7 +199,6 @@ async function startServer() {
       // 1. Structural Priors (CEF & Transfer Entropy)
       let structuralPriors = "No structural data provided.";
       let geometricOracles = "No geometric data provided.";
-      let judge3 = null;
       let marketGates = {
         volatility: { status: 'UNKNOWN', zScore: 0 },
         predictability: { isPredictable: false, type: 'UNKNOWN' },
@@ -196,15 +208,8 @@ async function startServer() {
       if (priceHistory && priceHistory.length > 0) {
         const cef = calculateCEF(priceHistory, liquidityMap || { [priceHistory[priceHistory.length-1]]: 1 });
         
-        // Prepare candles for Judge 3 and 4
-        const candles = priceHistory.map((p: number, i: number) => ({
-          open: priceHistory[i-1] || p,
-          close: p
-        }));
+        // Judge 1 & 2 structural analysis
 
-        // Judge 3: Z-Score
-        judge3 = calculateZScoreSignificance(candles);
-        
         // New Gates
         const volRegime = calculateVolatilityRegime(priceHistory.map((p: number, i: number) => {
           const prev = priceHistory[i-1] || p;
@@ -263,7 +268,6 @@ async function startServer() {
       res.json({
         structuralPriors,
         geometricOracles,
-        judge3,
         marketGates
       });
 
@@ -398,8 +402,6 @@ async function startServer() {
         bodies = bodies.map((b: number) => ({ open: 0, close: b, high: b, low: 0 }));
       }
       
-      const zScoreCandles = (ohlc && ohlc.length >= 3) ? ohlc : bodies;
-      const j3Result = calculateZScoreSignificance(zScoreCandles);
       const boundaryResult = calculateBoundaryReversal(Number(extractedData.priceYPercent || 50), ohlc);
 
       // --- NEW: Calculate Advanced Metrics from Vision Data ---
@@ -462,13 +464,6 @@ async function startServer() {
       }
 
       const statScoresContext = `
-JUDGE 3 (Z-Score Candle Significance):
-  - Z-Score: ${j3Result.zScore.toFixed(2)}
-  - Signal Type: ${j3Result.signalType || 'UNKNOWN'}
-  - Direction of significant candle: ${j3Result.direction || 'NEUTRAL'}
-  - BULL gets: ${(j3Result.bullPoints || 0).toFixed(2)} pts
-  - BEAR gets: ${(j3Result.bearPoints || 0).toFixed(2)} pts
-  (Max 4.0 each. Negative = counter-signal penalty.)
 JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED POINTS: Bull Gets +${boundaryResult.bullPoints.toFixed(1)}, Bear Gets +${boundaryResult.bearPoints.toFixed(1)}
 `;
 
@@ -483,16 +478,30 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
       // Parallelize core arguments with INCREASED STAGGERED starts to avoid burst rate limits
       const agentResults = await Promise.allSettled([
         (async () => {
-          // No delay for bull
-          return safeCall(bullPrompt, undefined, true, isHighReq);
+          try {
+            return await safeCall(bullPrompt, undefined, true, isHighReq);
+          } catch (e) {
+            console.error("[DEBATE] Bull Agent failed permanently:", e);
+            return null;
+          }
         })(),
         (async () => {
-          await new Promise(r => setTimeout(r, 6000)); // 6s stagger
-          return safeCall(bearPrompt, undefined, true, isHighReq);
+          try {
+            await new Promise(r => setTimeout(r, 6000)); // 6s stagger
+            return await safeCall(bearPrompt, undefined, true, isHighReq);
+          } catch (e) {
+            console.error("[DEBATE] Bear Agent failed permanently:", e);
+            return null;
+          }
         })(),
         (async () => {
-          await new Promise(r => setTimeout(r, 12000)); // 12s stagger
-          return safeCall(skepticPrompt, undefined, true, isHighReq);
+          try {
+            await new Promise(r => setTimeout(r, 12000)); // 12s stagger
+            return await safeCall(skepticPrompt, undefined, true, isHighReq);
+          } catch (e) {
+            console.error("[DEBATE] Skeptic Agent failed permanently:", e);
+            return null;
+          }
         })()
       ]);
 
@@ -547,6 +556,31 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
       const judgeRaw = await safeCall(judgePrompt, undefined, true, true);
       const judge = parseResponse(judgeRaw);
 
+      // ENFORCE MATHEMATICAL CONSISTENCY
+      // If the LLM declared a winner that actually has a lower score, we correct it to match the math.
+      if (judge && judge.cases && (judge.winner === 'BULL' || judge.winner === 'BEAR')) {
+        const calculateTotal = (data: any) => {
+          return Number(data.j1 || 0) + Number(data.j2 || 0) + Number(data.j4 || 0);
+        };
+
+        const bullComputed = calculateTotal(judge.cases.bull);
+        const bearComputed = calculateTotal(judge.cases.bear);
+        
+        // Update totals to be accurate
+        if (judge.cases.bull) judge.cases.bull.total = bullComputed;
+        if (judge.cases.bear) judge.cases.bear.total = bearComputed;
+
+        if (judge.winner === 'BULL' && bearComputed > bullComputed) {
+           console.warn(`[ARBITRATOR] Inconsistency corrected: BEAR (${bearComputed}) > BULL (${bullComputed}) but LLM chose BULL. Swapping winner to BEAR.`);
+           judge.winner = 'BEAR';
+           if (judge.tradeDetails) judge.tradeDetails.signal = 'PUT';
+        } else if (judge.winner === 'BEAR' && bullComputed > bearComputed) {
+           console.warn(`[ARBITRATOR] Inconsistency corrected: BULL (${bullComputed}) > BEAR (${bearComputed}) but LLM chose BEAR. Swapping winner to BULL.`);
+           judge.winner = 'BULL';
+           if (judge.tradeDetails) judge.tradeDetails.signal = 'CALL';
+        }
+      }
+
       // Count techniques explicitly listed by scanning the markdown list format
       const techUsed = judge.tradeDetails?.techniquesUsed || "";
       const techUsedCount = techUsed.split('\n').filter((line: string) => line.trim().startsWith('-') || line.trim().startsWith('*')).length;
@@ -573,37 +607,56 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
       if (!image || !anchorThesis) return res.status(400).json({ error: "Missing image or thesis" });
       
       const prompt = `
-      Perform a quick analysis of the newest candles on the right edge of this chart for a trading simulation.
+      Perform a precision analysis of the micro-movements on the right edge of this chart.
       
-      ANCHOR THESIS (The Macro AI Decision):
+      ANCHOR THESIS:
       ${anchorThesis}
       
-      Does the new price action support or contradict the anchor thesis?
+      CRITICAL FOCUS:
+      - Detect "Micro-Noise": Is the price wiggling indecisively? 
+      - Detect "Late Candle Weakness": Are wicks forming against the thesis?
+      - Detect "Opposite Spikes": Is there a sudden counter-move?
+      
+      ACTIONS:
+      - "ABORT": Thesis is invalidated by a strong opposite move or spike.
+      - "WAIT": Conditions are noisy/volatile; wait for the current candle to settle before entry.
+      - "BUILD": Price action perfectly confirms thesis with strong momentum.
+      - "HOLD": Neutral but still valid.
+      - "EXIT": Trend is slowing down, prepare to wrap up.
+
       Respond ONLY with a valid JSON object:
       {
-        "action": "HOLD" | "BUILD" | "EXIT",
-        "reason": "1 strict sentence explaining live candle movement"
+        "action": "ABORT" | "WAIT" | "BUILD" | "HOLD" | "EXIT",
+        "reason": "1 short sentence explaining why (e.g., 'Late wick forming', 'Indecisive noise')"
       }
       `;
 
-      // We use the same model, but skipping heavy computation.
-      // (Using standard GPT-4o structure which processes simple bounding very fast).
+      // We use the faster mini model for scouting to reduce latency
       const rawResponse = await callModel({
-        model: process.env.VISION_MODEL || "gpt-4o",
+        model: "gpt-4o-mini",
         prompt,
         image,
         jsonMode: true
       });
+
+      if (!rawResponse) {
+        throw new Error("Scout model returned empty response");
+      }
 
       let cleanRaw = rawResponse.replace(/```json|```/g, '').trim();
       const start = cleanRaw.indexOf('{');
       const end = cleanRaw.lastIndexOf('}');
       if (start !== -1 && end !== -1) cleanRaw = cleanRaw.substring(start, end + 1);
 
-      res.json(JSON.parse(cleanRaw));
+      try {
+        res.json(JSON.parse(cleanRaw));
+      } catch {
+        console.error("Scout JSON parse failed:", cleanRaw);
+        res.json({ action: "HOLD", reason: "Analysis temporarily unavailable (Syncing...)" });
+      }
     } catch (error: any) {
       console.error("Scout error:", error);
-      res.status(500).json({ error: "Scout processing failed" });
+      res.status(500).json({ error: "Scout processing failed", details: error.message });
     }
   });
 

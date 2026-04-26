@@ -223,9 +223,18 @@ export function LiveAnalysis() {
   };
 
   useEffect(() => {
-    let intervalId: any;
-    if (scoutActive && analysis && isCameraActive && videoRef.current) {
-      intervalId = setInterval(async () => {
+    let timeoutId: any;
+    let isMounted = true;
+    let isFetching = false;
+
+    const startScoutLoop = async () => {
+      if (!isMounted || !scoutActive || !analysis || !isCameraActive || !videoRef.current) return;
+      
+      const currentInterval = (tradingPhase === 'WAITING_FOR_ENTRY' || tradingPhase === 'ENTRY_CONFIRMED') ? 2000 : 10000;
+      const startTime = Date.now();
+
+      if (!isFetching) {
+        isFetching = true;
         try {
           const video = videoRef.current;
           const canvas = document.createElement('canvas');
@@ -241,7 +250,7 @@ export function LiveAnalysis() {
             // Build the Anchor Thesis string
             const anchorThesis = `Direction: ${analysis.judge.tradeDetails?.signal}, Insight: ${analysis.judge.tradeDetails?.bigInsight}, Verdict: ${analysis.judge.ruling}`;
             
-            const res = await fetch(`http://localhost:3000/api/scout`, {
+            const res = await fetch(`/api/scout`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ image: scoutImg, anchorThesis })
@@ -249,18 +258,42 @@ export function LiveAnalysis() {
             
             if (res.ok) {
               const scoutJSON = await res.json();
-              setScoutData(scoutJSON);
+              if (isMounted) {
+                setScoutData(scoutJSON);
+                if (scoutJSON.action === 'ABORT' || scoutJSON.action === 'EXIT') {
+                  setAnalysisError(`Trade Aborted: ${scoutJSON.reason}`);
+                  setScoutActive(false);
+                  setTradingPhase('IDLE');
+                  setAnalysisStep('TRADE REJECTED - CONDITIONS INVALIDATED');
+                }
+              }
             }
           }
         } catch (e) {
           console.error("Scout loop error", e);
+        } finally {
+          isFetching = false;
         }
-      }, 10000); // 10 second ticker
-    }
-    return () => {
-      if (intervalId) clearInterval(intervalId);
+      }
+      
+      if (isMounted) {
+        // High-speed mode: subtract the time spent processing to hit the next window exactly
+        const elapsed = Date.now() - startTime;
+        const nextTick = Math.max(500, currentInterval - elapsed); 
+        timeoutId = setTimeout(() => startScoutLoop().catch(console.error), nextTick);
+      }
     };
-  }, [scoutActive, analysis, isCameraActive]);
+
+    if (scoutActive && analysis && isCameraActive && videoRef.current) {
+      const initialInterval = (tradingPhase === 'WAITING_FOR_ENTRY' || tradingPhase === 'ENTRY_CONFIRMED') ? 2000 : 10000;
+      timeoutId = setTimeout(() => startScoutLoop().catch(console.error), initialInterval);
+    }
+    
+    return () => {
+      isMounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [scoutActive, analysis, isCameraActive, tradingPhase]);
 
   const closePickers = () => {
     setShowTfPicker(false);
@@ -456,36 +489,39 @@ export function LiveAnalysis() {
 
     // Increased delay (250ms) to ensure the gesture system releases the button properly 
     // before the component unmounts for the loading screen.
-    setTimeout(async () => {
-      setLoading(true);
-      setAnalysisError(null);
-      setAnalysis(null);
-      setTradingPhase('ANALYSING_DIRECTION');
-      setAnalysisStep(`SYNCHRONIZING ${techniquesList.length} TECHNIQUES...`);
+    setTimeout(() => {
+      (async () => {
+        let controller: AbortController | undefined;
+        let timeoutId: any;
+        try {
+          setLoading(true);
+        setAnalysisError(null);
+        setAnalysis(null);
+        setTradingPhase('ANALYSING_DIRECTION');
+        setAnalysisStep(`SYNCHRONIZING ${techniquesList.length} TECHNIQUES...`);
 
-    // Optimize image for transmission (web canvas resize)
-    const optimizedImage = await downscaleImage(finalImageToAnalyze);
-    const base64Data = optimizedImage.split(',')[1];
-    
-    setJudgeLogs({
-      judge1: { text: "Initializing Deep Scan...", status: 'active' },
-      judge2: { text: "Initializing Deep Scan...", status: 'active' },
-      judge3: { text: "Initializing Deep Scan...", status: 'active' },
-      judge4: { text: "Initializing Deep Scan...", status: 'active' },
-      system: { text: "Injecting global context...", status: 'active' }
-    });
+        // Optimize image for transmission (web canvas resize)
+        const optimizedImage = await downscaleImage(finalImageToAnalyze);
+        const base64Data = optimizedImage.split(',')[1];
+        
+        setJudgeLogs({
+          judge1: { text: "Initializing Deep Scan...", status: 'active' },
+          judge2: { text: "Initializing Deep Scan...", status: 'active' },
+          judge3: { text: "Initializing Deep Scan...", status: 'active' },
+          judge4: { text: "Initializing Deep Scan...", status: 'active' },
+          system: { text: "Injecting global context...", status: 'active' }
+        });
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      try {
-        controller.abort();
-      } catch (e) {
-        console.warn("Manual abort failed", e);
-      }
-    }, 360000); // Increased to 360s Safety Timeout
+        controller = new AbortController();
+        timeoutId = setTimeout(() => {
+          try {
+            controller?.abort();
+          } catch (e) {
+            console.warn("Manual abort failed", e);
+          }
+        }, 360000); // Increased to 360s Safety Timeout
 
-    try {
-      const fetchWithRetry = async (url: string, options: any, retries: number = 2): Promise<Response> => {
+        const fetchWithRetry = async (url: string, options: any, retries: number = 2): Promise<Response> => {
         if (options.signal?.aborted) {
           throw new Error("Request aborted before retry");
         }
@@ -674,7 +710,8 @@ export function LiveAnalysis() {
       setTradingPhase('IDLE');
       setLoading(false);
       setIsBusy(false);
-    }
+        }
+      })().catch(console.error);
     }, 10);
   };
 
@@ -928,13 +965,15 @@ export function LiveAnalysis() {
                    </Pressable>
                  )}
                  {scoutActive && (
-                   <View style={tw`absolute bottom-2 left-2 right-2 bg-black/90 p-2 rounded-lg border border-[#00FFFF]/30`}>
+                   <View style={tw`absolute bottom-2 left-2 right-2 bg-black/90 p-2 rounded-lg border ${scoutData?.action === 'ABORT' ? 'border-red-500' : scoutData?.action === 'WAIT' ? 'border-orange-500' : 'border-[#00FFFF]/30'}`}>
                       <View style={tw`flex-row justify-between items-center mb-1`}>
                          <View style={tw`flex-row items-center`}>
-                           <View style={tw`w-2 h-2 rounded-full bg-[#00FFFF] mr-2`} />
+                           <View style={tw`w-2 h-2 rounded-full ${scoutData?.action === 'ABORT' ? 'bg-red-500' : scoutData?.action === 'WAIT' ? 'bg-orange-500' : 'bg-[#00FFFF]'} mr-2`} />
                            <Text style={tw`text-[#00FFFF] font-black text-[9px] uppercase tracking-widest`}>Live Tick Scout</Text>
                          </View>
-                         <Text style={tw`text-white font-black text-[10px]`}>{scoutData ? scoutData.action.replace('BAIL', 'EXIT') : 'ANALYZING...'}</Text>
+                         <Text style={tw`font-black text-[10px] ${scoutData?.action === 'ABORT' ? 'text-red-400' : scoutData?.action === 'WAIT' ? 'text-orange-400' : scoutData?.action === 'BUILD' ? 'text-green-400' : 'text-white'}`}>
+                            {scoutData ? scoutData.action : 'ANALYZING...'}
+                         </Text>
                       </View>
                       {scoutData && (
                         <Text style={tw`text-white/80 text-[9px] leading-3 font-medium`}>{scoutData.reason}</Text>
@@ -995,8 +1034,8 @@ export function LiveAnalysis() {
                 { key: 'system', label: 'System Context', color: '#00FFFF', bg: 'rgba(0, 255, 255, 0.05)' },
                 { key: 'judge1', label: 'Judge 1: Bull Consensus', color: '#FF00FF', bg: 'rgba(255, 0, 255, 0.05)' },
                 { key: 'judge2', label: 'Judge 2: Bear Pressure', color: '#FF1493', bg: 'rgba(255, 20, 147, 0.05)' },
-                { key: 'judge3', label: 'Judge 3: Risk Filter', color: '#39FF14', bg: 'rgba(57, 255, 20, 0.05)' },
-                { key: 'judge4', label: 'Judge 4: Reversal Gate', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.05)' }
+                { key: 'judge3', label: 'Risk Analyst', color: '#39FF14', bg: 'rgba(57, 255, 20, 0.05)' },
+                { key: 'judge4', label: 'Judge 3: Reversal Gate', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.05)' }
               ].map((item, idx) => (
                 <motion.div
                   key={item.key}
@@ -1147,10 +1186,9 @@ export function LiveAnalysis() {
                       </div>
                       
                       {[
-                        { label: 'J1 reasoning', val: data.j1, max: 5 },
-                        { label: 'J2 vehicle', val: data.j2, max: 5 },
-                        { label: 'J3 z-score', val: data.j3, max: 5 },
-                        { label: 'J4 reversal', val: data.j4, max: 2.5 },
+                        { label: 'J1 reasoning', val: data.j1, max: 4 },
+                        { label: 'J2 vehicle', val: data.j2, max: 4 },
+                        { label: 'J3 reversal', val: data.j4, max: 3 },
                       ].map((j, i) => (
                         <div key={i} className="mb-2">
                           <div className="flex flex-row justify-between items-center mb-1">
@@ -1176,7 +1214,7 @@ export function LiveAnalysis() {
                           transition={{ duration: 2, repeat: Infinity }}
                           className={`text-xs font-black ${isWinner ? (side === 'bull' ? 'text-green-400' : 'text-red-400') : 'text-white'}`}
                         >
-                          {data.total}/17.5
+                          {data.total}/11.0
                         </motion.p>
                       </div>
                     </motion.div>

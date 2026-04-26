@@ -62,15 +62,14 @@ export const JUDGE_PROMPT = `
 You are tasked with providing an objective evaluation of theoretical trade setups for an educational simulation. Your job is to determine the highest probability direction (UP or DOWN) based on the provided Comparative Scoring System.
 
 ─────────────────────────────────────
-THE 4-METRIC SCORING CRITERIA
+THE 3-METRIC SCORING CRITERIA
 ─────────────────────────────────────
 JUDGE 1 — Argument Quality (Max: 4 pts)
 JUDGE 2 — Context Alignment (Max: 4 pts)
-JUDGE 3 — Statistical Z-Score (Max: 4 pts) - DATA PROVIDED
 JUDGE 4 — Trend Reversal Boundary (Max: 3 pts) - DATA PROVIDED
 
-CRITICAL: You MUST use the EXACT points provided in the "SCORING DATA PROVIDED" section for J3 and J4. 
-Do not hallucinate or modify J3 or J4 points. If the data provides 0.0 or negative points (e.g. -0.5) for a side, you MUST write it exactly as provided (e.g., 0.0/4 or -0.5/4).
+CRITICAL: You MUST use the EXACT points provided in the "SCORING DATA PROVIDED" section for J4. 
+Do not hallucinate or modify J4 points. If the data provides 0.0 or negative points (e.g. -0.5) for a side, you MUST write it exactly as provided (e.g., 0.0/3 or -0.5/3).
 For J1 and J2, do not award exactly 0.0 points.
 
 ─────────────────────────────────────
@@ -90,14 +89,15 @@ GEOMETRIC & PHYSICAL ORACLES:
 ─────────────────────────────────────
 INHALATION & CONFLICT RESOLUTION (MANDATORY BALANCE)
 ─────────────────────────────────────
-1. Calculate the hypothetical TOTAL SCORE for the BULL setup and BEAR setup individually (Max: 15.0 points).
+1. Calculate the hypothetical TOTAL SCORE for the BULL setup and BEAR setup individually (Max: 11.0 points).
 2. Adjust for the Risk Assessment. If risk is high (>60%), you MUST remain extremely cautious.
-3. The WINNER is the side with the HIGHER score after risk adjustments.
-4. If BOTH scores (after risk adjustment) are below 8.0, the winner is "NO_TRADE".
+3. The WINNER MUST be the side with the HIGHER TOTAL score in your "cases" object. You are mathematically forbidden from choosing a winner with a lower total score.
+4. If BOTH scores are below 6.5, the winner MUST be "NO_TRADE".
 5. If the winner is BULL, the signal MUST be "CALL". 
 6. If the winner is BEAR, the signal MUST be "PUT".
 7. BALANCE DIRECTIVE: Avoid favoring CALL signals solely based on macro trend. If there is no clear breakdown or breakthrough, prefer NO TRADE.
-8. CONFIDENCE DIRECTIVE: If your 'finalConfidence' is less than 70%, you MUST return winner as 'NO_TRADE' and signal as 'NO TRADE'. High-quality signals require rigorous evidence.
+8. CONFIDENCE DIRECTIVE: If your 'finalConfidence' is less than 70%, you MUST return winner as 'NO_TRADE' and signal as 'NO TRADE'.
+9. THE SCORING IS FINAL. The 'total' score fields you provide in the 'cases' JSON MUST reflect your final decision accurately.
 
 ─────────────────────────────────────
 TECHNIQUE TRACKING (MANDATORY)
@@ -117,10 +117,10 @@ Your response MUST be a JSON object with this structure:
   "ruling": "Detailed explanation of why Case 1 scored higher than Case 2 (or vice versa), including how you integrated the Skeptic and Mirror results",
   "cases": {
     "bull": {
-      "j1": number, "j2": number, "j3": number, "j4": number, "total": number
+      "j1": number, "j2": number, "j4": number, "total": number
     },
     "bear": {
-      "j1": number, "j2": number, "j3": number, "j4": number, "total": number
+      "j1": number, "j2": number, "j4": number, "total": number
     }
   },
   "decision": "STRONG SIGNAL" | "MODERATE" | "NO TRADE",
@@ -146,10 +146,9 @@ The "formattedReport" MUST look like this:
 CASE 1: BULL        CASE 2: BEAR
 J1: X/4             J1: X/4
 J2: X/4             J2: X/4
-J3: X/4             J3: X/4
 J4: X/3.0           J4: X/3.0
 ─────────────       ─────────────
-Adj. Total: T1/15.0 Adj. Total: T2/15.0
+Adj. Total: T1/11.0 Adj. Total: T2/11.0
 
 Decision: [Winner] ([Signal Type])
 `;

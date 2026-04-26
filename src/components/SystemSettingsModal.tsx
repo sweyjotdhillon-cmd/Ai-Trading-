@@ -56,6 +56,8 @@ export function SystemSettingsModal({ show, onClose }: Props) {
       navigator.clipboard.writeText(link).then(() => {
         setCopyStatus('copied');
         setTimeout(() => setCopyStatus('idle'), 2000);
+      }).catch(err => {
+        console.warn("Clipboard write failed", err);
       });
     }
   };

@@ -52,7 +52,7 @@ function App() {
         console.warn("API config fetch failed", e);
       }
     };
-    fetchConfig();
+    fetchConfig().catch(console.error);
   }, []);
 
   useEffect(() => {

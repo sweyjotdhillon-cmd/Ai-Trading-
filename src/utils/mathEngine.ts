@@ -330,9 +330,13 @@ export function calculateZScoreSignificance(
     bearPoints = parseFloat(Math.max(negativeScore, -0.5).toFixed(2));
   }
 
+  // Final guard against exactly 0.00 (replace with moderate value 0.10)
+  if (bullPoints === 0) bullPoints = 0.10;
+  if (bearPoints === 0) bearPoints = 0.10;
+
   return {
     zScore: parseFloat(zScore.toFixed(3)),
-    points: direction === 'BULL' ? bullPoints : direction === 'BEAR' ? bearPoints : negativeScore,
+    points: direction === 'BULL' ? bullPoints : direction === 'BEAR' ? bearPoints : bullPoints,
     bullPoints,
     bearPoints,
     direction,
