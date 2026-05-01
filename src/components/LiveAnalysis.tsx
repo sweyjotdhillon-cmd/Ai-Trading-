@@ -257,14 +257,17 @@ export function LiveAnalysis() {
             });
             
             if (res.ok) {
-              const scoutJSON = await res.json();
-              if (isMounted) {
-                setScoutData(scoutJSON);
-                if (scoutJSON.action === 'ABORT' || scoutJSON.action === 'EXIT') {
-                  setAnalysisError(`Trade Aborted: ${scoutJSON.reason}`);
-                  setScoutActive(false);
-                  setTradingPhase('IDLE');
-                  setAnalysisStep('TRADE REJECTED - CONDITIONS INVALIDATED');
+              const contentType = res.headers.get("content-type");
+              if (contentType && contentType.includes("application/json")) {
+                const scoutJSON = await res.json();
+                if (isMounted) {
+                  setScoutData(scoutJSON);
+                  if (scoutJSON.action === 'ABORT' || scoutJSON.action === 'EXIT') {
+                    setAnalysisError(`Trade Aborted: ${scoutJSON.reason}`);
+                    setScoutActive(false);
+                    setTradingPhase('IDLE');
+                    setAnalysisStep('TRADE REJECTED - CONDITIONS INVALIDATED');
+                  }
                 }
               }
             }

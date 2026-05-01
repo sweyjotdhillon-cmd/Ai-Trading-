@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Modal, 
   View, 
@@ -8,8 +8,9 @@ import {
   ScrollView
 } from 'react-native';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, ShieldAlert, CheckCircle, Copy, Share2 } from 'lucide-react';
+import { X, ShieldAlert, CheckCircle, Copy, Share2, Plus, Trash2 } from 'lucide-react';
 import tw from 'twrnc';
+import { auth } from '../firebase';
 
 interface Props {
   show: boolean;
@@ -35,6 +36,82 @@ export function SystemSettingsModal({ show, onClose }: Props) {
   
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
+
+  // Admin Token State
+  const isAdmin = auth.currentUser?.email === 'kveerpal681@gmail.com' || auth.currentUser?.email === 'aitradinggemini@gmail.com';
+  const [adminTokens, setAdminTokens] = useState<string[]>([]);
+  const [newAdminToken, setNewAdminToken] = useState('');
+  const [adminTokenStatus, setAdminTokenStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+
+  useEffect(() => {
+    if (show && isAdmin) {
+      fetch('/api/admin/tokens', {
+        headers: { 'x-admin-email': auth.currentUser?.email || '' }
+      })
+      .then(async res => {
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error('Failed to fetch admin tokens: ' + res.status + ' ' + text.substring(0, 50));
+        }
+        const contentType = res.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          return res.json();
+        }
+        return null;
+      })
+      .then(data => {
+        if (data && data.tokens) setAdminTokens(data.tokens);
+      })
+      .catch(err => {
+        console.warn("Could not load admin tokens:", err);
+      });
+    }
+  }, [show, isAdmin]);
+
+  const saveAdminSystemTokens = async (tokensToSave: string[]) => {
+    setAdminTokenStatus('saving');
+    try {
+      const res = await fetch('/api/admin/tokens', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-email': auth.currentUser?.email || ''
+        },
+        body: JSON.stringify({ tokens: tokensToSave })
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error('Failed to save admin tokens: ' + res.status + ' ' + text.substring(0, 50));
+      }
+      let data = null;
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      }
+      if (data && data.success) {
+        setAdminTokens(data.tokens);
+        setAdminTokenStatus('saved');
+        setTimeout(() => setAdminTokenStatus('idle'), 2000);
+      } else {
+        setAdminTokenStatus('idle');
+      }
+    } catch (e) {
+      console.warn("Could not save admin tokens:", e);
+      setAdminTokenStatus('idle');
+    }
+  };
+
+  const addAdminToken = () => {
+    if (!newAdminToken.trim()) return;
+    const updated = [...adminTokens, newAdminToken.trim()];
+    setNewAdminToken('');
+    saveAdminSystemTokens(updated);
+  };
+
+  const removeAdminToken = (index: number) => {
+    const updated = adminTokens.filter((_, i) => i !== index);
+    saveAdminSystemTokens(updated);
+  };
 
   const handleSave = () => {
     if (typeof window !== 'undefined') {
@@ -159,10 +236,10 @@ export function SystemSettingsModal({ show, onClose }: Props) {
     
                   <View style={tw`border border-white/5 p-4 rounded-xl bg-black/20 mt-2 gap-4`}>
                     <View style={tw`relative mb-4`}>
-                      <Text style={tw`text-xs text-[#8B95B0] mb-2`}>GitHub Token (Required)</Text>
+                      <Text style={tw`text-xs text-[#8B95B0] mb-2`}>Personal GitHub Token</Text>
                       <TextInput
                         secureTextEntry={true}
-                        placeholder="Enter GitHub Token"
+                        placeholder="Enter GitHub Token (overrides system)"
                         placeholderTextColor="#4B5570"
                         value={githubToken}
                         onChangeText={setGithubToken}
@@ -181,6 +258,56 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                       />
                     </View>
                   </View>
+
+                  {isAdmin && (
+                    <View style={tw`mt-8 mb-4`}>
+                      <View style={tw`flex-row items-center gap-2 mb-4`}>
+                        <ShieldAlert size={16} color="#ef4444" />
+                        <Text style={tw`text-sm font-bold text-red-500 uppercase tracking-wider`}>
+                          Admin System Tokens {adminTokenStatus === 'saving' ? '(Saving...)' : adminTokenStatus === 'saved' ? '(Saved!)' : ''}
+                        </Text>
+                      </View>
+                      
+                      <View style={tw`border border-red-500/20 p-4 rounded-xl bg-black/40`}>
+                        <Text style={tw`text-[10px] text-red-400/80 mb-4 leading-4`}>
+                          Tokens added here are used chronologically for all users in the system to prevent rate limiting. These are hidden from standard users.
+                        </Text>
+
+                        {adminTokens.map((token, index) => (
+                          <View key={index} style={tw`flex-row items-center gap-2 mb-2 p-3 bg-white/5 rounded-lg border border-white/10`}>
+                            <Text style={tw`flex-1 text-white text-xs`}>
+                              {token.substring(0, 8)}...{token.substring(token.length - 4)}
+                            </Text>
+                            <Pressable 
+                              onPress={() => removeAdminToken(index)}
+                              style={({ pressed }) => [tw`p-2`, { opacity: pressed ? 0.7 : 1 }]}
+                            >
+                              <Trash2 size={14} color="#ef4444" />
+                            </Pressable>
+                          </View>
+                        ))}
+
+                        <View style={tw`flex-row items-center gap-2 mt-4`}>
+                          <TextInput
+                            placeholder="Add system token..."
+                            placeholderTextColor="#4B5570"
+                            value={newAdminToken}
+                            onChangeText={setNewAdminToken}
+                            style={tw`flex-1 px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-sm text-white`}
+                          />
+                          <Pressable
+                            onPress={addAdminToken}
+                            style={({ pressed }) => [
+                              tw`p-3 bg-red-500/20 border border-red-500/30 rounded-xl`,
+                              { opacity: pressed ? 0.7 : 1 }
+                            ]}
+                          >
+                            <Plus size={20} color="#ef4444" />
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+                  )}
 
                   <Pressable
                     onPress={handleSave}

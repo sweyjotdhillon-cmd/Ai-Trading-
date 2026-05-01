@@ -2,6 +2,36 @@ import express from "express";
 import path from "path";
 import cors from "cors";
 import { Jimp } from "jimp";
+import fs from "fs";
+
+// Load Admin GitHub Tokens from disk
+const TOKENS_FILE = path.join(process.cwd(), 'admin_tokens.json');
+let systemGitTokens: string[] = [];
+try {
+  if (fs.existsSync(TOKENS_FILE)) {
+    systemGitTokens = JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf-8'));
+  }
+} catch (e) {
+  console.error("Error loading admin tokens", e);
+}
+
+const saveAdminTokens = (tokens: string[]) => {
+  systemGitTokens = tokens;
+  try {
+    fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokens, null, 2), 'utf-8');
+  } catch (e) {
+    console.error("Error saving admin tokens", e);
+  }
+};
+
+let currentTokenIndex = 0;
+const getNextSystemGitToken = (): string | undefined => {
+  if (systemGitTokens.length === 0) return process.env.GITHUB_TOKEN;
+  const token = systemGitTokens[currentTokenIndex % systemGitTokens.length];
+  currentTokenIndex++;
+  return token;
+};
+
 import { 
   calculateCEF, 
   calculateTransferEntropy, 
@@ -25,8 +55,8 @@ async function callModel(params: {
   userEndpoint?: string,
   jsonMode?: boolean
 }) {
-  const apiKey = params.userApiKey || process.env.GITHUB_TOKEN;
-  if (!apiKey) throw new Error("GitHub Token is missing. Please add it in Settings.");
+  let currentApiKey = params.userApiKey || getNextSystemGitToken();
+  if (!currentApiKey) throw new Error("GitHub Token is missing. Please add it in Settings.");
 
   const baseUrl = params.userEndpoint || process.env.GITHUB_API_BASE_URL || "https://models.inference.ai.azure.com";
   // Trim trailing slash and ensure /chat/completions is present
@@ -66,7 +96,7 @@ async function callModel(params: {
         {
           method: "POST",
           headers: {
-             "Authorization": `Bearer ${apiKey}`,
+             "Authorization": `Bearer ${currentApiKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify(payload),
@@ -78,12 +108,23 @@ async function callModel(params: {
       if (rateLimitRetries === 0) {
         throw new Error(`GitHub Models API Rate Limit Exceeded (429) after all retries. Please wait 30+ seconds.`);
       }
-      const jitter = 1000 + Math.floor(Math.random() * 3000);
-      const totalDelay = Math.min(delay + jitter, 30000); // Cap retry delay at 30 seconds
-      console.warn(`Rate limited (429). Retrying in ${totalDelay}ms... (${rateLimitRetries} retries left)`);
-      await new Promise(resolve => setTimeout(resolve, totalDelay));
+      
+      // If we don't have a user API key and there are multiple system tokens, cycle the token
+      if (!params.userApiKey && systemGitTokens.length > 1) {
+         console.warn(`Rate limited (429). Switching to next system API token...`);
+         currentApiKey = getNextSystemGitToken();
+         if (!currentApiKey) throw new Error("No available GitHub tokens to rotate to.");
+         // When rotating, try immediately with minimal jitter
+         const jitter = 500 + Math.floor(Math.random() * 500);
+         await new Promise(resolve => setTimeout(resolve, jitter));
+      } else {
+         const jitter = 1000 + Math.floor(Math.random() * 3000);
+         const totalDelay = Math.min(delay + jitter, 30000); // Cap retry delay at 30 seconds
+         console.warn(`Rate limited (429). Retrying in ${totalDelay}ms... (${rateLimitRetries} retries left)`);
+         await new Promise(resolve => setTimeout(resolve, totalDelay));
+         delay *= 1.5; 
+      }
       rateLimitRetries--;
-      delay *= 1.5; 
       continue;
     }
 
@@ -188,8 +229,30 @@ async function startServer() {
     res.json({ 
       hasFirebase: true, 
       serverStatus: "ok",
-      githubEnabled: !!process.env.GITHUB_TOKEN
+      githubEnabled: systemGitTokens.length > 0 || !!process.env.GITHUB_TOKEN
     });
+  });
+
+  app.get("/api/admin/tokens", (req, res) => {
+    const adminEmail = req.headers['x-admin-email'];
+    if (adminEmail !== 'kveerpal681@gmail.com') {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+    res.json({ tokens: systemGitTokens });
+  });
+
+  app.post("/api/admin/tokens", (req, res) => {
+    const adminEmail = req.headers['x-admin-email'];
+    if (adminEmail !== 'kveerpal681@gmail.com') {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+    const { tokens } = req.body;
+    if (Array.isArray(tokens)) {
+      saveAdminTokens(tokens);
+      res.json({ success: true, tokens: systemGitTokens });
+    } else {
+      res.status(400).json({ error: "Invalid tokens payload" });
+    }
   });
 
   app.post("/api/pre-analysis", async (req, res) => {
@@ -288,7 +351,7 @@ async function startServer() {
     }
 
     // API Key & Endpoint
-    const finalApiKey = githubToken || process.env.GITHUB_TOKEN;
+    const finalApiKey = githubToken || getNextSystemGitToken();
     const finalEndpoint = githubEndpoint || process.env.GITHUB_API_BASE_URL || "https://models.inference.ai.azure.com";
     
     // Prompt Injection Protection: Sanitize user bounds
