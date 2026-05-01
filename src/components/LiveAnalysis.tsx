@@ -559,8 +559,6 @@ export function LiveAnalysis() {
           },
           structuralPriors: `Macro context for ${stockName} on ${graphTimeframe} timeframe.`,
           geometricOracles: "Standard geometric extraction.",
-          githubToken: typeof window !== 'undefined' ? localStorage.getItem('app_user_github_token') : '',
-          githubEndpoint: typeof window !== 'undefined' ? localStorage.getItem('app_user_github_endpoint') : '',
           techniqueData: techniquesList,
           statsData: statsData.slice(-3)
         }),

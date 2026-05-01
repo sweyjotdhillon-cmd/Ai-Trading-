@@ -229,7 +229,8 @@ async function startServer() {
     res.json({ 
       hasFirebase: true, 
       serverStatus: "ok",
-      githubEnabled: systemGitTokens.length > 0 || !!process.env.GITHUB_TOKEN
+      githubEnabled: systemGitTokens.length > 0 || !!process.env.GITHUB_TOKEN,
+      systemTokenCount: systemGitTokens.length
     });
   });
 
@@ -343,16 +344,12 @@ async function startServer() {
   app.post("/api/debate", async (req, res) => {
     const bodySize = JSON.stringify(req.body).length;
     console.log(`[API] Received debate request at ${new Date().toISOString()} - Approx Size: ${(bodySize / 1024 / 1024).toFixed(2)}MB`);
-    const { image, symbol, timeframe, investment, structuralPriors, geometricOracles, githubToken, githubEndpoint, techniqueData, statsData } = req.body;
+    const { image, symbol, timeframe, investment, structuralPriors, geometricOracles, techniqueData, statsData } = req.body;
     
     if (!image) {
       console.error("[API] Missing image in request body");
       return res.status(400).json({ error: "Missing image data" });
     }
-
-    // API Key & Endpoint
-    const finalApiKey = githubToken || getNextSystemGitToken();
-    const finalEndpoint = githubEndpoint || process.env.GITHUB_API_BASE_URL || "https://models.inference.ai.azure.com";
     
     // Prompt Injection Protection: Sanitize user bounds
     const safeSymbol = (symbol || "Unknown").replace(/[\n\r]/g, ' ');
@@ -405,8 +402,6 @@ async function startServer() {
               model: modelName, 
               prompt, 
               image: img, 
-              userApiKey: finalApiKey, 
-              userEndpoint: finalEndpoint, 
               jsonMode: json 
             });
             if (!raw) continue;

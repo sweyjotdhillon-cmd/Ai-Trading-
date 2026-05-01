@@ -18,21 +18,7 @@ interface Props {
 }
 
 export function SystemSettingsModal({ show, onClose }: Props) {
-  const [githubToken, setGithubToken] = useState(() => {
-    try {
-      return typeof window !== 'undefined' ? localStorage.getItem('app_user_github_token') || '' : '';
-    } catch {
-      return '';
-    }
-  });
 
-  const [githubEndpoint, setGithubEndpoint] = useState(() => {
-    try {
-      return typeof window !== 'undefined' ? localStorage.getItem('app_user_github_endpoint') || 'https://models.inference.ai.azure.com' : 'https://models.inference.ai.azure.com';
-    } catch {
-      return 'https://models.inference.ai.azure.com';
-    }
-  });
   
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
@@ -42,8 +28,23 @@ export function SystemSettingsModal({ show, onClose }: Props) {
   const [adminTokens, setAdminTokens] = useState<string[]>([]);
   const [newAdminToken, setNewAdminToken] = useState('');
   const [adminTokenStatus, setAdminTokenStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [systemTokenCount, setSystemTokenCount] = useState<number>(0);
 
   useEffect(() => {
+    if (show) {
+      // Fetch public config
+      fetch('/api/config')
+        .then(res => res.json())
+        .then(data => {
+          if (data && typeof data.systemTokenCount === 'number') {
+            setSystemTokenCount(data.systemTokenCount);
+          }
+        })
+        .catch(err => {
+          console.warn("Could not load config:", err);
+        });
+    }
+
     if (show && isAdmin) {
       fetch('/api/admin/tokens', {
         headers: { 'x-admin-email': auth.currentUser?.email || '' }
@@ -115,8 +116,6 @@ export function SystemSettingsModal({ show, onClose }: Props) {
 
   const handleSave = () => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('app_user_github_token', githubToken);
-      localStorage.setItem('app_user_github_endpoint', githubEndpoint);
       // Explicitly make sure legacy keys are cleared
       localStorage.removeItem('app_user_hf_api_key');
       localStorage.removeItem('app_user_reasoning_engine');
@@ -225,39 +224,22 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                   <View style={tw`border border-white/5 p-4 rounded-xl bg-black/20 mb-4`}>
                     <View style={tw`relative`}>
                       <Text style={tw`text-xs text-[#8B95B0] mb-2`}>Active AI Model</Text>
-                      <View style={tw`w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl`}>
+                      <View style={tw`w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl flex-row justify-between items-center`}>
                         <Text style={tw`text-sm text-[#8B95B0]`}>Llama 3.2 90B Vision Instruct</Text>
+                        <View style={tw`flex-row items-center gap-2`}>
+                          <View style={tw`w-2 h-2 rounded-full ${systemTokenCount > 0 ? 'bg-green-500' : 'bg-red-500'}`} />
+                          <Text style={tw`text-xs ${systemTokenCount > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            {systemTokenCount > 0 ? 'Connected' : 'Offline'}
+                          </Text>
+                        </View>
                       </View>
                       <Text style={tw`mt-2 text-[10px] text-[#D9B382]/80 font-medium`}>
-                        Consolidated to GitHub Models API engine.
+                        {systemTokenCount} system keys configured by Admin for automatic failover.
                       </Text>
                     </View>
                   </View>
     
-                  <View style={tw`border border-white/5 p-4 rounded-xl bg-black/20 mt-2 gap-4`}>
-                    <View style={tw`relative mb-4`}>
-                      <Text style={tw`text-xs text-[#8B95B0] mb-2`}>Personal GitHub Token</Text>
-                      <TextInput
-                        secureTextEntry={true}
-                        placeholder="Enter GitHub Token (overrides system)"
-                        placeholderTextColor="#4B5570"
-                        value={githubToken}
-                        onChangeText={setGithubToken}
-                        style={tw`w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-sm text-white`}
-                      />
-                    </View>
 
-                    <View style={tw`relative`}>
-                      <Text style={tw`text-xs text-[#8B95B0] mb-2`}>GitHub API Endpoint</Text>
-                      <TextInput
-                        placeholder="https://models.inference.ai.azure.com"
-                        placeholderTextColor="#4B5570"
-                        value={githubEndpoint}
-                        onChangeText={setGithubEndpoint}
-                        style={tw`w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-sm text-white`}
-                      />
-                    </View>
-                  </View>
 
                   {isAdmin && (
                     <View style={tw`mt-8 mb-4`}>
