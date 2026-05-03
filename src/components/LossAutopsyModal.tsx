@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { View, Text, Pressable, ScrollView, Modal, ActivityIndicator, Platform } from 'react-native';
 import { X, Upload, Activity, AlertTriangle, CheckCircle, Search } from 'lucide-react';
 import tw from 'twrnc';
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 
 interface Props {
   isOpen: boolean;
@@ -12,6 +12,21 @@ interface Props {
   encryptedSystemTokens?: string; // For backend auth
 }
 
+const listContainerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.05
+    }
+  }
+};
+
+const listItemVariants = {
+  hidden: { opacity: 0, y: 8 },
+  show: { opacity: 1, y: 0 }
+};
+
 export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, encryptedSystemTokens }: Props) {
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -20,6 +35,10 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
   const [isLogged, setIsLogged] = useState(false);
   
   const fileInputRef = useRef<any>(null);
+  const prefersReducedMotion = useReducedMotion();
+  const springProps = { type: "spring", stiffness: 400, damping: 22 };
+  const buttonHoverProps = prefersReducedMotion ? {} : { scale: 1.04 };
+  const buttonTapProps = prefersReducedMotion ? {} : { scale: 0.96 };
 
   const handlePickResultImage = () => {
     if (Platform.OS === 'web') {
@@ -125,13 +144,22 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
     return 'CRITICAL';
   };
 
+  if (!isOpen) return null;
+
   return (
-    <Modal visible={isOpen} transparent={true} animationType="slide">
-      <View style={tw`flex-1 bg-black/90 justify-center items-center py-10 px-4`}>
+    <Modal visible={isOpen} transparent={true} animationType="none">
+      <motion.div 
+        initial={{ opacity: 0 }} 
+        animate={{ opacity: 1 }} 
+        exit={{ opacity: 0 }} 
+        transition={{ duration: prefersReducedMotion ? 0 : 0.25 }}
+        style={tw`flex-1 bg-black/90 justify-center items-center py-10 px-4`}
+      >
         <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
+          initial={{ opacity: 0, scale: prefersReducedMotion ? 1 : 0.94, y: prefersReducedMotion ? 0 : 16 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: prefersReducedMotion ? 1 : 0.94, y: prefersReducedMotion ? 0 : 16 }}
+          transition={prefersReducedMotion ? { duration: 0 } : { type: "spring", stiffness: 320, damping: 26 }}
           className="bg-[#14161C] w-full max-w-4xl border border-red-500/30 rounded-2xl flex-1 max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative"
         >
           {Platform.OS === 'web' && (
@@ -145,7 +173,9 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
               <Text style={tw`text-white/60 text-sm`}>Signal was {tradeSignal}. Actual market went opposite.</Text>
             </View>
             <Pressable onPress={onClose} style={tw`p-2 bg-white/5 rounded-full hover:bg-white/10`}>
-              <X size={24} color="#8B95B0" />
+              <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
+                <X size={24} color="#8B95B0" />
+              </motion.div>
             </Pressable>
           </div>
 
@@ -165,11 +195,15 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
                       onPress={runAutopsy}
                       style={({pressed}) => [tw`bg-red-600 px-8 py-4 rounded-xl flex-row items-center`, { opacity: pressed ? 0.7:1}]}
                     >
-                      <Search size={20} color="white" style={tw`mr-3`} />
-                      <Text style={tw`text-white font-black text-lg tracking-[1px]`}>RUN FORENSIC AUTOPSY</Text>
+                      <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                        <Search size={20} color="white" style={tw`mr-3`} />
+                        <Text style={tw`text-white font-black text-lg tracking-[1px]`}>RUN FORENSIC AUTOPSY</Text>
+                      </motion.div>
                     </Pressable>
                     <Pressable onPress={handlePickResultImage} style={tw`mt-4`}>
-                      <Text style={tw`text-white/60 text-sm underline`}>Change Image</Text>
+                      <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
+                        <Text style={tw`text-white/60 text-sm underline`}>Change Image</Text>
+                      </motion.div>
                     </Pressable>
                   </View>
                 ) : (
@@ -177,9 +211,11 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
                     onPress={handlePickResultImage}
                     style={tw`border-2 border-dashed border-white/20 p-10 rounded-2xl items-center bg-white/5 hover:bg-white/10`}
                   >
-                    <Upload size={32} color="#8B95B0" style={tw`mb-4`} />
-                    <Text style={tw`text-white font-bold mb-1`}>Upload Post-Trade Chart</Text>
-                    <Text style={tw`text-gray-400 text-xs`}>Paste or select screenshot</Text>
+                    <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                      <Upload size={32} color="#8B95B0" style={tw`mb-4`} />
+                      <Text style={tw`text-white font-bold mb-1`}>Upload Post-Trade Chart</Text>
+                      <Text style={tw`text-gray-400 text-xs`}>Paste or select screenshot</Text>
+                    </motion.div>
                   </Pressable>
                 )}
                 {error && (
@@ -226,9 +262,9 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
 
                 {/* Categories breakdown */}
                 <Text style={tw`text-white/40 text-xs font-black uppercase tracking-[2px] mb-4`}>Forensic Breakdown (7 Layers)</Text>
-                <View style={tw`gap-3 mb-8`}>
+                <motion.div variants={prefersReducedMotion ? {} : listContainerVariants} initial="hidden" animate="show" style={tw`gap-3 mb-8`}>
                   {Object.entries(autopsyResult.categories || {}).map(([key, val]: any) => (
-                    <View key={key} style={tw`bg-white/5 border border-white/10 rounded-xl p-4`}>
+                    <motion.div variants={prefersReducedMotion ? {} : listItemVariants} key={key} style={tw`bg-white/5 border border-white/10 rounded-xl p-4`}>
                       <View style={tw`flex-row items-center justify-between mb-2`}>
                         <Text style={tw`text-[#D9B382] font-bold text-sm uppercase`}>{val.label || key}</Text>
                         <View style={tw`px-2 py-1 rounded-sm border ${getSeverityColor(val.severity)}`}>
@@ -238,9 +274,9 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
                         </View>
                       </View>
                       <Text style={tw`text-white/70 text-sm leading-relaxed`}>{val.explanation}</Text>
-                    </View>
+                    </motion.div>
                   ))}
-                </View>
+                </motion.div>
 
                 {/* Footer buttons */}
                 <View style={tw`flex-row gap-4 border-t border-white/10 pt-6`}>
@@ -252,24 +288,28 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
                       { opacity: pressed && !isLogged ? 0.7 : 1}
                     ]}
                   >
-                    {isLogged ? (
-                      <>
-                        <CheckCircle size={18} color="#22C55E" style={tw`mr-2`} />
-                        <Text style={tw`text-green-500 font-bold uppercase`}>Logged to Sheets</Text>
-                      </>
-                    ) : (
-                      <>
-                        <Activity size={18} color="white" style={tw`mr-2`} />
-                        <Text style={tw`text-white font-bold uppercase`}>Log This Autopsy</Text>
-                      </>
-                    )}
+                    <motion.div whileHover={isLogged || prefersReducedMotion ? {} : { scale: 1.04 }} whileTap={isLogged || prefersReducedMotion ? {} : { scale: 0.96 }} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                      {isLogged ? (
+                        <>
+                          <CheckCircle size={18} color="#22C55E" style={tw`mr-2`} />
+                          <Text style={tw`text-green-500 font-bold uppercase`}>Logged to Sheets</Text>
+                        </>
+                      ) : (
+                        <>
+                          <Activity size={18} color="white" style={tw`mr-2`} />
+                          <Text style={tw`text-white font-bold uppercase`}>Log This Autopsy</Text>
+                        </>
+                      )}
+                    </motion.div>
                   </Pressable>
                   
                   <Pressable 
                     onPress={onClose}
                     style={({pressed}) => [tw`py-4 px-8 bg-white/5 border border-white/10 justify-center items-center rounded-xl transition-all hover:bg-white/10`, { opacity: pressed ? 0.7 : 1}]}
                   >
-                    <Text style={tw`text-white font-bold uppercase`}>Close</Text>
+                    <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
+                      <Text style={tw`text-white font-bold uppercase`}>Close</Text>
+                    </motion.div>
                   </Pressable>
                 </View>
 
@@ -278,7 +318,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
 
           </ScrollView>
         </motion.div>
-      </View>
+      </motion.div>
     </Modal>
   );
 }

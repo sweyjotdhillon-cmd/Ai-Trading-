@@ -9,10 +9,32 @@ import {
 import { Upload, Trash2, List, LayoutGrid, Layout, History as HistoryIcon, Target, TrendingUp } from 'lucide-react';
 import tw from 'twrnc';
 import { useSessionStorage } from '../utils/useSessionStorage';
+import { motion, useReducedMotion } from 'motion/react';
+
+const listContainerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.05
+    }
+  }
+};
+
+const listItemVariants = {
+  hidden: { opacity: 0, scale: 0.96, y: 12 },
+  show: { opacity: 1, scale: 1, y: 0 }
+};
 
 export function StatisticsView() {
   const [jsonData, setJsonData] = useSessionStorage<any>('stats_surface_data', null);
   const [viewMode, setViewMode] = useState<'grid' | 'dashboard'>('dashboard');
+
+  const prefersReducedMotion = useReducedMotion();
+  const springProps = { type: "spring", stiffness: 400, damping: 22 };
+  const buttonHoverProps = prefersReducedMotion ? {} : { scale: 1.04 };
+  const buttonTapProps = prefersReducedMotion ? {} : { scale: 0.96 };
+  const cardHoverProps = prefersReducedMotion ? {} : { y: -2, boxShadow: "0 8px 24px rgba(0,0,0,0.25)" };
 
   const handleFileUpload = async () => {
     // In a real native app we would use DocumentPicker
@@ -71,28 +93,36 @@ export function StatisticsView() {
     const { wins, losses, winRate, roi, totalProfit, statsArray } = statsSummary;
 
     return (
-      <View style={tw`gap-3`}>
+      <motion.div variants={prefersReducedMotion ? {} : listContainerVariants} initial="hidden" animate="show" style={tw`gap-3`}>
         <View style={tw`flex-row flex-wrap gap-3`}>
-          <View style={tw`flex-1 min-w-[140px] p-4 bg-[#14161C] border border-white/5 rounded-2xl`}>
+          <motion.div variants={prefersReducedMotion ? {} : listItemVariants} whileHover={cardHoverProps} style={tw`flex-1 min-w-[140px] p-4 bg-[#14161C] border border-white/5 rounded-2xl`}>
             <View style={tw`flex-row justify-between items-center mb-3`}>
               <Text style={tw`text-[9px] font-black text-[#8B95B0] uppercase tracking-widest`}>Win Rate</Text>
               <Target size={12} color="#D9B382" />
             </View>
-            <Text style={tw`text-xl font-black text-white`}>{winRate.toFixed(1)}%</Text>
+            <Text style={tw`text-xl font-black text-white`}>
+              <motion.span key={winRate} initial={{ y: -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.2 }}>
+                {winRate.toFixed(1)}%
+              </motion.span>
+            </Text>
             <Text style={tw`mt-1 text-[9px] text-[#4B5570]`}>{wins}W / {losses}L</Text>
-          </View>
+          </motion.div>
 
-          <View style={tw`flex-1 min-w-[140px] p-4 bg-[#14161C] border border-white/5 rounded-2xl`}>
+          <motion.div variants={prefersReducedMotion ? {} : listItemVariants} whileHover={cardHoverProps} style={tw`flex-1 min-w-[140px] p-4 bg-[#14161C] border border-white/5 rounded-2xl`}>
             <View style={tw`flex-row justify-between items-center mb-3`}>
               <Text style={tw`text-[9px] font-black text-[#8B95B0] uppercase tracking-widest`}>Profit</Text>
               <TrendingUp size={12} color={totalProfit >= 0 ? '#22C55E' : '#EF4444'} />
             </View>
-            <Text style={[tw`text-xl font-black`, {color: totalProfit >= 0 ? '#22C55E' : '#EF4444'}]}>${totalProfit.toFixed(2)}</Text>
+            <Text style={[tw`text-xl font-black`, {color: totalProfit >= 0 ? '#22C55E' : '#EF4444'}]}>
+              <motion.span key={totalProfit} initial={{ y: -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.2 }}>
+                ${totalProfit.toFixed(2)}
+              </motion.span>
+            </Text>
             <Text style={tw`mt-1 text-[9px] text-[#4B5570]`}>ROI: {roi.toFixed(1)}%</Text>
-          </View>
+          </motion.div>
         </View>
 
-        <View style={tw`p-4 bg-[#14161C] border border-white/5 rounded-2xl`}>
+        <motion.div variants={prefersReducedMotion ? {} : listItemVariants} style={tw`p-4 bg-[#14161C] border border-white/5 rounded-2xl`}>
           <Text style={tw`text-[10px] font-black text-[#D9B382] uppercase tracking-[0.2em] mb-3`}>Recent History</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={tw`min-w-full`}>
@@ -110,8 +140,8 @@ export function StatisticsView() {
               ))}
             </View>
           </ScrollView>
-        </View>
-      </View>
+        </motion.div>
+      </motion.div>
     );
   };
 
@@ -121,9 +151,9 @@ export function StatisticsView() {
     const dataToRender = statsSummary ? statsSummary.statsArray : (Array.isArray(jsonData) ? jsonData : [jsonData]);
 
     return (
-      <View style={tw`flex-row flex-wrap gap-3 mt-2`}>
+      <motion.div variants={prefersReducedMotion ? {} : listContainerVariants} initial="hidden" animate="show" style={tw`flex-row flex-wrap gap-3 mt-2`}>
         {dataToRender.slice(0, 24).map((item: any, idx: number) => (
-          <View key={idx} style={tw`w-[100%] p-4 bg-[#14161C] border border-white/5 rounded-2xl shadow-lg`}>
+          <motion.div variants={prefersReducedMotion ? {} : listItemVariants} whileHover={cardHoverProps} key={idx} style={tw`w-[100%] p-4 bg-[#14161C] border border-white/5 rounded-2xl shadow-lg`}>
              <View style={tw`flex-row justify-between items-center mb-2`}>
               <Text style={tw`text-[9px] font-black text-[#D9B382] uppercase tracking-widest`}>Trade Entry #{idx + 1}</Text>
               <Layout size={10} color="#4B5570" />
@@ -140,9 +170,9 @@ export function StatisticsView() {
                 </View>
               ))}
             </View>
-          </View>
+          </motion.div>
         ))}
-      </View>
+      </motion.div>
     );
   };
 
@@ -162,14 +192,18 @@ export function StatisticsView() {
                 onPress={clearData} 
                 style={({ pressed }) => [tw`w-10 h-10 border border-red-500/20 bg-red-500/5 rounded-xl items-center justify-center`, { opacity: pressed ? 0.7 : 1 }]}
               >
-                <Trash2 size={18} color="#EF4444" />
+                <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
+                  <Trash2 size={18} color="#EF4444" />
+                </motion.div>
               </Pressable>
             )}
             <Pressable 
               onPress={handleFileUpload} 
               style={({ pressed }) => [tw`w-10 h-10 bg-[#D9B382] rounded-xl items-center justify-center shadow-lg`, { opacity: pressed ? 0.7 : 1 }]}
             >
-              <Upload size={18} color="#1A1308" />
+              <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
+                <Upload size={18} color="#1A1308" />
+              </motion.div>
             </Pressable>
           </View>
         </View>
@@ -189,7 +223,9 @@ export function StatisticsView() {
               onPress={handleFileUpload} 
               style={({ pressed }) => [tw`px-8 py-4 bg-[#D9B382] rounded-[24px]`, { opacity: pressed ? 0.7 : 1 }]}
             >
-              <Text style={tw`text-[#1A1308] font-bold`}>Initialize Import</Text>
+              <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
+                <Text style={tw`text-[#1A1308] font-bold`}>Initialize Import</Text>
+              </motion.div>
             </Pressable>
           </View>
         ) : (
@@ -203,13 +239,17 @@ export function StatisticsView() {
                       onPress={() => setViewMode('dashboard')} 
                       style={({ pressed }) => [tw`p-2 rounded-lg`, viewMode === 'dashboard' && tw`bg-[#D9B382]`, { opacity: pressed ? 0.7 : 1 }]}
                     >
-                        <LayoutGrid size={16} color={viewMode === 'dashboard' ? '#1A1308' : '#8B95B0'} />
+                        <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
+                          <LayoutGrid size={16} color={viewMode === 'dashboard' ? '#1A1308' : '#8B95B0'} />
+                        </motion.div>
                     </Pressable>
                     <Pressable 
                       onPress={() => setViewMode('grid')} 
                       style={({ pressed }) => [tw`p-2 rounded-lg`, viewMode === 'grid' && tw`bg-[#D9B382]`, { opacity: pressed ? 0.7 : 1 }]}
                     >
-                        <List size={16} color={viewMode === 'grid' ? '#1A1308' : '#8B95B0'} />
+                        <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
+                          <List size={16} color={viewMode === 'grid' ? '#1A1308' : '#8B95B0'} />
+                        </motion.div>
                     </Pressable>
                 </View>
             </View>

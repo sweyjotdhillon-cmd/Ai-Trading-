@@ -10,7 +10,7 @@ import {
   Platform,
   Modal
 } from 'react-native';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   CheckCircle, 
   Camera, 
@@ -143,6 +143,12 @@ export function LiveAnalysis() {
   const techInputRef = useRef<any>(null);
   const statsInputRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  const prefersReducedMotion = useReducedMotion();
+  const springProps = { type: "spring", stiffness: 400, damping: 22 };
+  const cardHoverProps = prefersReducedMotion ? {} : { y: -2, boxShadow: "0 8px 24px rgba(0,0,0,0.25)" };
+  const buttonHoverProps = prefersReducedMotion ? {} : { scale: 1.04 };
+  const buttonTapProps = prefersReducedMotion ? {} : { scale: 0.96 };
 
   useEffect(() => {
     return () => {
@@ -865,19 +871,23 @@ export function LiveAnalysis() {
               onPress={handlePickTechnique}
               style={({ pressed }) => [tw`w-9 h-9 rounded-lg items-center justify-center`, techFileName ? tw`bg-[#D9B382]` : tw`bg-white/5 border border-white/10`, { opacity: pressed ? 0.7 : 1 }]}
             >
-              <FileText size={16} color={techFileName ? "#1A1308" : "#8B95B0"} />
+              <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
+                <FileText size={16} color={techFileName ? "#1A1308" : "#8B95B0"} />
+              </motion.div>
             </Pressable>
             <Pressable 
               onPress={handlePickStatsFile}
               style={({ pressed }) => [tw`w-9 h-9 rounded-lg items-center justify-center`, statsFileName ? tw`bg-[#D9B382]` : tw`bg-white/5 border border-white/10`, { opacity: pressed ? 0.7 : 1 }]}
             >
-              <TrendingUp size={16} color={statsFileName ? "#1A1308" : "#8B95B0"} />
+              <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
+                <TrendingUp size={16} color={statsFileName ? "#1A1308" : "#8B95B0"} />
+              </motion.div>
             </Pressable>
           </View>
         </View>
 
         {/* Compact Dashboard Grid */}
-        <View style={[tw`bg-[#121419] rounded-2xl border border-white/10 p-4 shadow-2xl mb-4`, { zIndex: 100 }]}>
+        <motion.div whileHover={cardHoverProps} style={tw`bg-[#121419] rounded-2xl border border-white/10 p-4 shadow-2xl mb-4 z-100`}>
            <View style={tw`mb-4`}>
               <View style={tw`flex-row justify-between items-center mb-2`}>
                 <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Asset Selection</Text>
@@ -893,8 +903,10 @@ export function LiveAnalysis() {
                       { opacity: pressed ? 0.7 : 1 }
                     ]}
                   >
-                    <Text style={[tw`mr-1.5 text-xs`, stockName === s.name ? tw`text-black` : tw`text-[#D9B382]`]}>{s.icon}</Text>
-                    <Text style={[tw`text-[10px] font-black`, stockName === s.name ? tw`text-black` : tw`text-white`]}>{s.name}</Text>
+                    <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={[tw`mr-1.5 text-xs`, stockName === s.name ? tw`text-black` : tw`text-[#D9B382]`]}>{s.icon}</Text>
+                      <Text style={[tw`text-[10px] font-black`, stockName === s.name ? tw`text-black` : tw`text-white`]}>{s.name}</Text>
+                    </motion.div>
                   </Pressable>
                 ))}
               </View>
@@ -974,7 +986,7 @@ export function LiveAnalysis() {
                  />
               </View>
            </View>
-        </View>
+        </motion.div>
 
         {/* Dense Evidence Row */}
         <View style={tw`bg-[#121419] rounded-2xl border border-white/10 p-4 mb-4`}>
@@ -1082,9 +1094,11 @@ export function LiveAnalysis() {
             <div style={tw`flex-row items-center justify-between mb-4 border-b border-white/10 pb-3 relative z-10`}>
               <div style={tw`flex-row items-center gap-2`}>
                  <ActivityIndicator color="#D9B382" size="small" />
+                 <motion.div animate={prefersReducedMotion ? {} : { scale: [1, 1.15, 1], opacity: [0.7, 1, 0.7] }} transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }} style={{ display: 'contents' }}>
                  <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 10, color: '#D9B382' }]}>
                    {analysisStep || 'Live Neural Debate Active'}
                  </Text>
+                 </motion.div>
               </div>
               <Text style={[tw`tracking-widest uppercase`, { fontSize: 8, color: '#8B95B0' }]}>Simultaneous execution</Text>
             </div>
@@ -1359,11 +1373,19 @@ export function LiveAnalysis() {
             <View style={tw`flex-row gap-4 mb-8`}>
               <View style={tw`flex-1 p-3 bg-black/20 rounded-xl border border-white/5`}>
                 <Text style={tw`text-[8px] font-black text-[#8B95B0] uppercase mb-1`}>Confidence</Text>
-                <Text style={tw`text-white font-black text-lg`}>{analysis.judge.finalConfidence}%</Text>
+                <Text style={tw`text-white font-black text-lg`}>
+                  <motion.span key={analysis.judge.finalConfidence} initial={{ y: prefersReducedMotion ? 0 : -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}>
+                    {analysis.judge.finalConfidence}%
+                  </motion.span>
+                </Text>
               </View>
               <View style={tw`flex-1 p-3 bg-black/20 rounded-xl border border-white/5`}>
                 <Text style={tw`text-[8px] font-black text-[#8B95B0] uppercase mb-1`}>Potential Profit</Text>
-                <Text style={tw`text-[#22C55E] font-black text-lg`}>+${((Number(profitabilityPercent)/100) * Number(investmentAmount)).toFixed(2)}</Text>
+                <Text style={tw`text-[#22C55E] font-black text-lg`}>
+                  <motion.span key={((Number(profitabilityPercent)/100) * Number(investmentAmount)).toFixed(2)} initial={{ y: prefersReducedMotion ? 0 : -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}>
+                    +${((Number(profitabilityPercent)/100) * Number(investmentAmount)).toFixed(2)}
+                  </motion.span>
+                </Text>
               </View>
             </View>
 
@@ -1379,16 +1401,20 @@ export function LiveAnalysis() {
                       onPress={() => saveToStats(analysis, 'WIN')}
                       style={({ pressed }) => [tw`flex-1 bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                     >
-                      <CheckCircle size={18} color="white" style={tw`mr-2`} />
-                      <Text style={tw`text-white font-black uppercase text-sm`}>WIN (PROFIT)</Text>
+                      <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                        <CheckCircle size={18} color="white" style={tw`mr-2`} />
+                        <Text style={tw`text-white font-black uppercase text-sm`}>WIN (PROFIT)</Text>
+                      </motion.div>
                     </Pressable>
                     
                     <Pressable 
                       onPress={() => saveToStats(analysis, 'LOSS')}
                       style={({ pressed }) => [tw`flex-1 bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                     >
-                      <XCircle size={18} color="white" style={tw`mr-2`} />
-                      <Text style={tw`text-white font-black uppercase text-sm`}>LOSS</Text>
+                      <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                        <XCircle size={18} color="white" style={tw`mr-2`} />
+                        <Text style={tw`text-white font-black uppercase text-sm`}>LOSS</Text>
+                      </motion.div>
                     </Pressable>
                   </View>
                 ) : (
@@ -1423,8 +1449,10 @@ export function LiveAnalysis() {
               onPress={handleReset}
               style={({ pressed }) => [tw`mt-6 bg-[#1A1308] border border-white/10 h-14 rounded-2xl items-center justify-center flex-row shadow-2xl`, { opacity: pressed ? 0.7 : 1 }]}
             >
-              <Sparkles size={20} color="#D9B382" style={tw`mr-3`} />
-              <Text style={tw`text-white font-black uppercase tracking-[2px] text-sm`}>Start New Analysis</Text>
+              <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                <Sparkles size={20} color="#D9B382" style={tw`mr-3`} />
+                <Text style={tw`text-white font-black uppercase tracking-[2px] text-sm`}>Start New Analysis</Text>
+              </motion.div>
             </Pressable>
           </motion.div>
         )}

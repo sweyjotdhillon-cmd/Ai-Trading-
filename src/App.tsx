@@ -11,11 +11,12 @@ import {
   Platform
 } from 'react-native';
 import { Settings, LogIn, Activity, LayoutGrid, History as HistoryIcon } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'motion/react';
 
 import { LiveAnalysis } from './components/LiveAnalysis';
 import { StatisticsView } from './components/StatisticsView';
 import { SystemSettingsModal } from './components/SystemSettingsModal';
+import { HeroMotion } from './components/HeroMotion';
 import { auth, signIn, logOut as firebaseLogOut } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
@@ -27,7 +28,13 @@ function App() {
   
   const [activeTab, setActiveTab] = useState<'live' | 'stats'>('live');
   const [showSystemSettings, setShowSystemSettings] = useState(false);
+  const [heroDismissed, setHeroDismissed] = useState(false);
   
+  const prefersReducedMotion = useReducedMotion();
+  const transitionDuration = prefersReducedMotion ? 0 : 0.35;
+  const transitionProps = { duration: transitionDuration, ease: "easeOut" };
+  const springProps = { type: "spring", stiffness: 400, damping: 22 };
+
   useEffect(() => {
     const handleError = (e: any) => {
       console.error("Global error caught:", e);
@@ -101,7 +108,9 @@ function App() {
           style={({ pressed }) => [styles.signInButton, { marginTop: 30, backgroundColor: '#14161C', borderColor: '#4B5570', borderWidth: 1, opacity: pressed ? 0.7 : 1 }]}
           onPress={() => window.location.reload()}
         >
-          <Text style={{ color: 'white', fontWeight: 'bold' }}>Reload Application</Text>
+          <motion.div whileHover={prefersReducedMotion ? {} : { scale: 1.04 }} whileTap={prefersReducedMotion ? {} : { scale: 0.96 }} transition={springProps} style={{ display: 'contents' }}>
+            <Text style={{ color: 'white', fontWeight: 'bold' }}>Reload Application</Text>
+          </motion.div>
         </Pressable>
       </View>
     );
@@ -121,16 +130,16 @@ function App() {
       <SafeAreaView style={styles.container}>
         <View style={styles.authWrapper}>
           <motion.div
-            initial={{ opacity: 0, y: 40, scale: 0.96 }}
+            initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 40, scale: prefersReducedMotion ? 1 : 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.5, ease: "easeOut" }}
             style={{ display: 'contents' }}
           >
             <View style={styles.authCard}>
               <View style={styles.logoContainer}>
                 <motion.div
-                  animate={{ rotate: [0, 10, -10, 0] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                  animate={{ rotate: prefersReducedMotion ? 0 : [0, 10, -10, 0] }}
+                  transition={{ duration: prefersReducedMotion ? 0 : 3, repeat: Infinity, ease: "easeInOut" }}
                   style={{ display: 'contents' }}
                 >
                   <Activity color="#D9B382" size={48} />
@@ -144,8 +153,15 @@ function App() {
                 style={({ pressed }) => [styles.signInButton, { opacity: pressed ? 0.7 : 1 }]} 
                 onPress={handleSignIn}
               >
-                <LogIn color="white" size={20} style={{marginRight: 10}} />
-                <Text style={styles.signInButtonText}>Sign in with Google</Text>
+                <motion.div
+                  whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
+                  whileTap={prefersReducedMotion ? {} : { scale: 0.96 }}
+                  transition={springProps}
+                  style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}
+                >
+                  <LogIn color="white" size={20} style={{marginRight: 10}} />
+                  <Text style={styles.signInButtonText}>Sign in with Google</Text>
+                </motion.div>
               </Pressable>
             </View>
           </motion.div>
@@ -160,9 +176,9 @@ function App() {
       
       {/* Refined Android Header */}
       <motion.div
-        initial={{ opacity: 0, y: -20 }}
+        initial={{ opacity: 0, y: prefersReducedMotion ? 0 : -20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.4, ease: "easeOut" }}
         style={{ display: 'contents' }}
       >
         <View style={styles.header}>
@@ -180,17 +196,31 @@ function App() {
               style={({ pressed }) => [styles.headerAction, { opacity: pressed ? 0.7 : 1 }]}
               onPress={() => setTimeout(() => setShowSystemSettings(true), 10)}
             >
-              <Settings color="#8E9299" size={20} />
+              <motion.div
+                whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
+                whileTap={prefersReducedMotion ? {} : { scale: 0.96 }}
+                transition={springProps}
+                style={{ display: 'contents' }}
+              >
+                <Settings color="#8E9299" size={20} />
+              </motion.div>
             </Pressable>
             
-            <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })} onPress={handleLogOut}>
-              {user.photoURL ? (
-                <Image source={{ uri: user.photoURL }} style={styles.profileImage} />
-              ) : (
-                <View style={styles.profilePlaceholder}>
-                  <LogIn color="#1A1308" size={16} />
-                </View>
-              )}
+            <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, marginLeft: 10 })} onPress={handleLogOut}>
+              <motion.div
+                whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
+                whileTap={prefersReducedMotion ? {} : { scale: 0.96 }}
+                transition={springProps}
+                style={{ display: 'contents' }}
+              >
+                {user.photoURL ? (
+                  <Image source={{ uri: user.photoURL }} style={[styles.profileImage, { marginLeft: 0 }]} />
+                ) : (
+                  <View style={[styles.profilePlaceholder, { marginLeft: 0 }]}>
+                    <LogIn color="#1A1308" size={16} />
+                  </View>
+                )}
+              </motion.div>
             </Pressable>
           </View>
         </View>
@@ -198,43 +228,63 @@ function App() {
 
       {/* Main Content Area */}
       <View style={styles.main}>
-        <AnimatePresence mode="wait">
-          {activeTab === 'live' ? (
-            <motion.div
-              key="live"
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              transition={{ duration: 0.2 }}
-              style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, flexGrow: 1 }}
-            >
-              <LiveAnalysis />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="stats"
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              transition={{ duration: 0.2 }}
-              style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, flexGrow: 1 }}
-            >
-              <StatisticsView />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <LayoutGroup>
+          <AnimatePresence mode="wait">
+            {!heroDismissed ? (
+              <motion.div
+                key="hero"
+                layout
+                initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -12, filter: prefersReducedMotion ? 'none' : 'blur(4px)' }}
+                transition={transitionProps}
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, flexGrow: 1 }}
+              >
+                <HeroMotion 
+                  onStart={() => { setActiveTab('live'); setHeroDismissed(true); }}
+                  onViewStats={() => { setActiveTab('stats'); setHeroDismissed(true); }}
+                />
+              </motion.div>
+            ) : activeTab === 'live' ? (
+              <motion.div
+                key="live"
+                layout
+                initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -12 }}
+                transition={transitionProps}
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, flexGrow: 1 }}
+              >
+                <LiveAnalysis />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="stats"
+                layout
+                initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -12 }}
+                transition={transitionProps}
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, flexGrow: 1 }}
+              >
+                <StatisticsView />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </LayoutGroup>
       </View>
 
       {/* Modern Android Bottom Bar */}
       <View style={styles.bottomBar}>
         <Pressable 
           style={({ pressed }) => [styles.bottomBarItem, { opacity: pressed ? 0.7 : 1 }]} 
-          onPress={() => setTimeout(() => setActiveTab('live'), 10)}
+          onPress={() => setTimeout(() => { setActiveTab('live'); setHeroDismissed(true); }, 10)}
         >
           <motion.div
-            whileTap={{ scale: 0.88 }}
-            animate={{ scale: activeTab === 'live' ? 1.08 : 1 }}
-            transition={{ type: "spring", stiffness: 300, damping: 17 }}
+            whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
+            whileTap={prefersReducedMotion ? {} : { scale: 0.96 }}
+            animate={{ scale: activeTab === 'live' ? (prefersReducedMotion ? 1 : 1.08) : 1 }}
+            transition={springProps}
             style={{ display: 'contents' }}
           >
             <View style={[styles.bottomBarIcon, activeTab === 'live' && styles.bottomBarIconActive]}>
@@ -246,12 +296,13 @@ function App() {
         
         <Pressable 
           style={({ pressed }) => [styles.bottomBarItem, { opacity: pressed ? 0.7 : 1 }]} 
-          onPress={() => setTimeout(() => setActiveTab('stats'), 10)}
+          onPress={() => setTimeout(() => { setActiveTab('stats'); setHeroDismissed(true); }, 10)}
         >
           <motion.div
-            whileTap={{ scale: 0.88 }}
-            animate={{ scale: activeTab === 'stats' ? 1.08 : 1 }}
-            transition={{ type: "spring", stiffness: 300, damping: 17 }}
+            whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
+            whileTap={prefersReducedMotion ? {} : { scale: 0.96 }}
+            animate={{ scale: activeTab === 'stats' ? (prefersReducedMotion ? 1 : 1.08) : 1 }}
+            transition={springProps}
             style={{ display: 'contents' }}
           >
             <View style={[styles.bottomBarIcon, activeTab === 'stats' && styles.bottomBarIconActive]}>
@@ -461,3 +512,4 @@ const styles = StyleSheet.create({
 });
 
 export default App;
+

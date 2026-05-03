@@ -117,3 +117,27 @@ body {
     @apply text-[11px] sm:text-[13px] font-black text-accent uppercase tracking-[0.2em];
   }
 }
+
+@keyframes subtle-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+.animate-float {
+  animation: subtle-float 6s ease-in-out infinite;
+}
+
+@keyframes marque {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes shine {
+  to {
+    background-position: 200% center;
+  }
+}
+
+@keyframes scrollUp {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 80px; }
+}
