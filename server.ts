@@ -2,35 +2,58 @@ import express from "express";
 import path from "path";
 import cors from "cors";
 import { Jimp } from "jimp";
-import fs from "fs";
+import crypto from "crypto";
 
-// Load Admin GitHub Tokens from disk
-const TOKENS_FILE = path.join(process.cwd(), 'admin_tokens.json');
-let systemGitTokens: string[] = [];
-try {
-  if (fs.existsSync(TOKENS_FILE)) {
-    systemGitTokens = JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf-8'));
-  }
-} catch (e) {
-  console.error("Error loading admin tokens", e);
+const MASTER_KEY = crypto.scryptSync(process.env.BACKEND_ENCRYPTION_KEY || 'ai_trading_assistant_secret_salt_2026', 'salt', 32);
+
+function encryptTokens(tokens: string[]): string {
+  const text = JSON.stringify(tokens);
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-cbc', MASTER_KEY, iv);
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return iv.toString('hex') + ':' + encrypted;
 }
 
-const saveAdminTokens = (tokens: string[]) => {
-  systemGitTokens = tokens;
+function decryptTokens(encryptedText: string): string[] {
+  if (!encryptedText) return [];
   try {
-    fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokens, null, 2), 'utf-8');
+    const textParts = encryptedText.split(':');
+    const iv = Buffer.from(textParts.shift()!, 'hex');
+    const encrypted = Buffer.from(textParts.join(':'), 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-cbc', MASTER_KEY, iv);
+    let decrypted = decipher.update(encrypted);
+    decrypted = Buffer.concat([decrypted, decipher.final()]);
+    return JSON.parse(decrypted.toString());
   } catch (e) {
-    console.error("Error saving admin tokens", e);
+    console.error("Token decryption failed", e);
+    return [];
   }
-};
+}
 
-let currentTokenIndex = 0;
-const getNextSystemGitToken = (): string | undefined => {
-  if (systemGitTokens.length === 0) return process.env.GITHUB_TOKEN;
-  const token = systemGitTokens[currentTokenIndex % systemGitTokens.length];
-  currentTokenIndex++;
-  return token;
-};
+// Token cycle manager per request
+class TokenManager {
+  private tokens: string[] = [];
+  private currentIndex: number = 0;
+  
+  constructor(encryptedString?: string) {
+    if (encryptedString) {
+      this.tokens = decryptTokens(encryptedString);
+    }
+  }
+  
+  getNext(): string | undefined {
+    if (this.tokens.length === 0) return process.env.GITHUB_TOKEN;
+    const token = this.tokens[this.currentIndex % this.tokens.length];
+    this.currentIndex++;
+    return token;
+  }
+  
+  hasTokens(): boolean {
+    return this.tokens.length > 0;
+  }
+}
+
 
 import { 
   calculateCEF, 
@@ -53,9 +76,10 @@ async function callModel(params: {
   image?: string,
   userApiKey?: string,
   userEndpoint?: string,
-  jsonMode?: boolean
+  jsonMode?: boolean,
+  tokenManager: TokenManager
 }) {
-  let currentApiKey = params.userApiKey || getNextSystemGitToken();
+  let currentApiKey = params.userApiKey || params.tokenManager.getNext();
   if (!currentApiKey) throw new Error("GitHub Token is missing. Please add it in Settings.");
 
   const baseUrl = params.userEndpoint || process.env.GITHUB_API_BASE_URL || "https://models.inference.ai.azure.com";
@@ -110,9 +134,9 @@ async function callModel(params: {
       }
       
       // If we don't have a user API key and there are multiple system tokens, cycle the token
-      if (!params.userApiKey && systemGitTokens.length > 1) {
+      if (!params.userApiKey && params.tokenManager.hasTokens()) {
          console.warn(`Rate limited (429). Switching to next system API token...`);
-         currentApiKey = getNextSystemGitToken();
+         currentApiKey = params.tokenManager.getNext();
          if (!currentApiKey) throw new Error("No available GitHub tokens to rotate to.");
          // When rotating, try immediately with minimal jitter
          const jitter = 500 + Math.floor(Math.random() * 500);
@@ -228,36 +252,35 @@ async function startServer() {
   app.get("/api/config", (req, res) => {
     res.json({ 
       hasFirebase: true, 
-      serverStatus: "ok",
-      githubEnabled: systemGitTokens.length > 0 || !!process.env.GITHUB_TOKEN,
-      systemTokenCount: systemGitTokens.length
+      serverStatus: "ok"
     });
   });
 
-  app.get("/api/admin/tokens", (req, res) => {
+  app.post("/api/admin/secrets/encrypt", (req, res) => {
     const adminEmail = req.headers['x-admin-email'];
-    if (adminEmail !== 'kveerpal681@gmail.com') {
-      return res.status(403).json({ error: "Unauthorized" });
-    }
-    res.json({ tokens: systemGitTokens });
-  });
-
-  app.post("/api/admin/tokens", (req, res) => {
-    const adminEmail = req.headers['x-admin-email'];
-    if (adminEmail !== 'kveerpal681@gmail.com') {
+    if (adminEmail !== 'kveerpal681@gmail.com' && adminEmail !== 'aitradinggemini@gmail.com') {
       return res.status(403).json({ error: "Unauthorized" });
     }
     const { tokens } = req.body;
     if (Array.isArray(tokens)) {
-      saveAdminTokens(tokens);
-      res.json({ success: true, tokens: systemGitTokens });
+      res.json({ success: true, encryptedTokens: encryptTokens(tokens) });
     } else {
       res.status(400).json({ error: "Invalid tokens payload" });
     }
   });
 
+  app.post("/api/admin/secrets/decrypt", (req, res) => {
+    const adminEmail = req.headers['x-admin-email'];
+    if (adminEmail !== 'kveerpal681@gmail.com' && adminEmail !== 'aitradinggemini@gmail.com') {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+    const { encryptedTokens } = req.body;
+    res.json({ tokens: decryptTokens(encryptedTokens) });
+  });
+
   app.post("/api/pre-analysis", async (req, res) => {
-    const { priceHistory, correlatedAssets, liquidityMap } = req.body;
+    const { priceHistory, correlatedAssets, liquidityMap, encryptedSystemTokens } = req.body;
+    const tokenManager = new TokenManager(encryptedSystemTokens);
     
     try {
       // 1. Structural Priors (CEF & Transfer Entropy)
@@ -344,7 +367,8 @@ async function startServer() {
   app.post("/api/debate", async (req, res) => {
     const bodySize = JSON.stringify(req.body).length;
     console.log(`[API] Received debate request at ${new Date().toISOString()} - Approx Size: ${(bodySize / 1024 / 1024).toFixed(2)}MB`);
-    const { image, symbol, timeframe, investment, structuralPriors, geometricOracles, techniqueData, statsData } = req.body;
+    const { image, symbol, timeframe, investment, structuralPriors, geometricOracles, techniqueData, statsData, encryptedSystemTokens } = req.body;
+    const tokenManager = new TokenManager(encryptedSystemTokens);
     
     if (!image) {
       console.error("[API] Missing image in request body");
@@ -402,7 +426,8 @@ async function startServer() {
               model: modelName, 
               prompt, 
               image: img, 
-              jsonMode: json 
+              jsonMode: json,
+              tokenManager
             });
             if (!raw) continue;
             
@@ -661,7 +686,8 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
 
   app.post("/api/scout", async (req, res) => {
     try {
-      const { image, anchorThesis } = req.body;
+      const { image, anchorThesis, encryptedSystemTokens } = req.body;
+      const tokenManager = new TokenManager(encryptedSystemTokens);
       if (!image || !anchorThesis) return res.status(400).json({ error: "Missing image or thesis" });
       
       const prompt = `
@@ -694,7 +720,8 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
         model: "gpt-4o-mini",
         prompt,
         image,
-        jsonMode: true
+        jsonMode: true,
+        tokenManager
       });
 
       if (!rawResponse) {

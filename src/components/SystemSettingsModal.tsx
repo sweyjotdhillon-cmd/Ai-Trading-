@@ -10,7 +10,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ShieldAlert, CheckCircle, Copy, Share2, Plus, Trash2 } from 'lucide-react';
 import tw from 'twrnc';
-import { auth } from '../firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 
 interface Props {
   show: boolean;
@@ -31,40 +32,28 @@ export function SystemSettingsModal({ show, onClose }: Props) {
   const [systemTokenCount, setSystemTokenCount] = useState<number>(0);
 
   useEffect(() => {
+    // We get real count directly from Firestore without needing an API key if it's stored there.
     if (show) {
-      // Fetch public config
-      fetch('/api/config')
-        .then(res => res.json())
-        .then(data => {
-          if (data && typeof data.systemTokenCount === 'number') {
+      getDoc(doc(db, 'settings', 'system')).then(snap => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (typeof data.systemTokenCount === 'number') {
             setSystemTokenCount(data.systemTokenCount);
           }
-        })
-        .catch(err => {
-          console.warn("Could not load config:", err);
-        });
-    }
-
-    if (show && isAdmin) {
-      fetch('/api/admin/tokens', {
-        headers: { 'x-admin-email': auth.currentUser?.email || '' }
-      })
-      .then(async res => {
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error('Failed to fetch admin tokens: ' + res.status + ' ' + text.substring(0, 50));
+          if (isAdmin && data.encryptedTokens) {
+            // Decrypt it to show to admin
+            fetch('/api/admin/secrets/decrypt', {
+              method: 'POST',
+              headers: { 
+                 'Content-Type': 'application/json',
+                 'x-admin-email': auth.currentUser?.email || '' 
+              },
+              body: JSON.stringify({ encryptedTokens: data.encryptedTokens })
+            }).then(r => r.json()).then(res => {
+              if (res.tokens) setAdminTokens(res.tokens);
+            }).catch(e => console.warn(e));
+          }
         }
-        const contentType = res.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-          return res.json();
-        }
-        return null;
-      })
-      .then(data => {
-        if (data && data.tokens) setAdminTokens(data.tokens);
-      })
-      .catch(err => {
-        console.warn("Could not load admin tokens:", err);
       });
     }
   }, [show, isAdmin]);
@@ -72,7 +61,8 @@ export function SystemSettingsModal({ show, onClose }: Props) {
   const saveAdminSystemTokens = async (tokensToSave: string[]) => {
     setAdminTokenStatus('saving');
     try {
-      const res = await fetch('/api/admin/tokens', {
+      // 1. Encrypt them on backend
+      const res = await fetch('/api/admin/secrets/encrypt', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -80,17 +70,18 @@ export function SystemSettingsModal({ show, onClose }: Props) {
         },
         body: JSON.stringify({ tokens: tokensToSave })
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error('Failed to save admin tokens: ' + res.status + ' ' + text.substring(0, 50));
-      }
-      let data = null;
-      const contentType = res.headers.get("content-type");
-      if (contentType && contentType.includes("application/json")) {
-        data = await res.json();
-      }
-      if (data && data.success) {
-        setAdminTokens(data.tokens);
+      if (!res.ok) throw new Error('Failed to encrypt');
+      
+      const data = await res.json();
+      if (data && data.encryptedTokens) {
+        // 2. Save encrypted tokens to Firestore
+        await setDoc(doc(db, 'settings', 'system'), {
+           encryptedTokens: data.encryptedTokens,
+           systemTokenCount: tokensToSave.length
+        }, { merge: true });
+        
+        setAdminTokens(tokensToSave);
+        setSystemTokenCount(tokensToSave.length);
         setAdminTokenStatus('saved');
         setTimeout(() => setAdminTokenStatus('idle'), 2000);
       } else {

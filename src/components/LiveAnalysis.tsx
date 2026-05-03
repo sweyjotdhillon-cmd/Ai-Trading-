@@ -28,6 +28,8 @@ import {
   Zap
 } from 'lucide-react';
 import tw from 'twrnc';
+import { db } from '../firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 const JUDGE_TASKS = {
   judge1: ["Scanning support nodes...", "Evaluating volume nodes...", "Mapping price patterns...", "Analyzing breakouts...", "Finalizing Bullish Case..."],
@@ -87,6 +89,19 @@ export function LiveAnalysis() {
   const videoRef = useRef<any>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   
+  // Encrypted token state for backend
+  const [encryptedSystemTokens, setEncryptedSystemTokens] = useState<string | undefined>();
+  
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'system'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setEncryptedSystemTokens(data.encryptedTokens);
+      }
+    });
+    return () => unsub();
+  }, []);
+
   // Real-Time Scout (10s Tick)
   const [scoutActive, setScoutActive] = useState(false);
   const [scoutData, setScoutData] = useState<{action: string, reason: string} | null>(null);
@@ -253,7 +268,7 @@ export function LiveAnalysis() {
             const res = await fetch(`/api/scout`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ image: scoutImg, anchorThesis })
+              body: JSON.stringify({ image: scoutImg, anchorThesis, encryptedSystemTokens })
             });
             
             if (res.ok) {
@@ -560,7 +575,8 @@ export function LiveAnalysis() {
           structuralPriors: `Macro context for ${stockName} on ${graphTimeframe} timeframe.`,
           geometricOracles: "Standard geometric extraction.",
           techniqueData: techniquesList,
-          statsData: statsData.slice(-3)
+          statsData: statsData.slice(-3),
+          encryptedSystemTokens
         }),
         signal: controller.signal
       });
