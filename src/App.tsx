@@ -120,22 +120,35 @@ function App() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.authWrapper}>
-          <View style={styles.authCard}>
-            <View style={styles.logoContainer}>
-              <Activity color="#D9B382" size={48} />
+          <motion.div
+            initial={{ opacity: 0, y: 40, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            style={{ display: 'contents' }}
+          >
+            <View style={styles.authCard}>
+              <View style={styles.logoContainer}>
+                <motion.div
+                  animate={{ rotate: [0, 10, -10, 0] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                  style={{ display: 'contents' }}
+                >
+                  <Activity color="#D9B382" size={48} />
+                </motion.div>
+              </View>
+              <Text style={styles.authTitle}>AI Trading Assistant</Text>
+              <Text style={styles.authSubtitle}>
+                Professional-grade market analysis on the go.
+              </Text>
+              <Pressable 
+                style={({ pressed }) => [styles.signInButton, { opacity: pressed ? 0.7 : 1 }]} 
+                onPress={handleSignIn}
+              >
+                <LogIn color="white" size={20} style={{marginRight: 10}} />
+                <Text style={styles.signInButtonText}>Sign in with Google</Text>
+              </Pressable>
             </View>
-            <Text style={styles.authTitle}>AI Trading Assistant</Text>
-            <Text style={styles.authSubtitle}>
-              Professional-grade market analysis on the go.
-            </Text>
-            <Pressable 
-              style={({ pressed }) => [styles.signInButton, { opacity: pressed ? 0.7 : 1 }]} 
-              onPress={handleSignIn}
-            >
-              <LogIn color="white" size={20} style={{marginRight: 10}} />
-              <Text style={styles.signInButtonText}>Sign in with Google</Text>
-            </Pressable>
-          </View>
+          </motion.div>
         </View>
       </SafeAreaView>
     );
@@ -146,35 +159,42 @@ function App() {
       <StatusBar barStyle="light-content" />
       
       {/* Refined Android Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View style={styles.iconBox}>
-            <Activity color="#1A1308" size={18} />
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+        style={{ display: 'contents' }}
+      >
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <View style={styles.iconBox}>
+              <Activity color="#1A1308" size={18} />
+            </View>
+            <View>
+              <Text style={styles.headerTitle}>AI TRADING</Text>
+              <Text style={styles.headerSubtitle}>PRO TERMINAL</Text>
+            </View>
           </View>
-          <View>
-            <Text style={styles.headerTitle}>AI TRADING</Text>
-            <Text style={styles.headerSubtitle}>PRO TERMINAL</Text>
+          <View style={styles.headerRight}>
+            <Pressable 
+              style={({ pressed }) => [styles.headerAction, { opacity: pressed ? 0.7 : 1 }]}
+              onPress={() => setTimeout(() => setShowSystemSettings(true), 10)}
+            >
+              <Settings color="#8E9299" size={20} />
+            </Pressable>
+            
+            <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })} onPress={handleLogOut}>
+              {user.photoURL ? (
+                <Image source={{ uri: user.photoURL }} style={styles.profileImage} />
+              ) : (
+                <View style={styles.profilePlaceholder}>
+                  <LogIn color="#1A1308" size={16} />
+                </View>
+              )}
+            </Pressable>
           </View>
         </View>
-        <View style={styles.headerRight}>
-          <Pressable 
-            style={({ pressed }) => [styles.headerAction, { opacity: pressed ? 0.7 : 1 }]}
-            onPress={() => setTimeout(() => setShowSystemSettings(true), 10)}
-          >
-            <Settings color="#8E9299" size={20} />
-          </Pressable>
-          
-          <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })} onPress={handleLogOut}>
-            {user.photoURL ? (
-              <Image source={{ uri: user.photoURL }} style={styles.profileImage} />
-            ) : (
-              <View style={styles.profilePlaceholder}>
-                <LogIn color="#1A1308" size={16} />
-              </View>
-            )}
-          </Pressable>
-        </View>
-      </View>
+      </motion.div>
 
       {/* Main Content Area */}
       <View style={styles.main}>
@@ -211,9 +231,16 @@ function App() {
           style={({ pressed }) => [styles.bottomBarItem, { opacity: pressed ? 0.7 : 1 }]} 
           onPress={() => setTimeout(() => setActiveTab('live'), 10)}
         >
-          <View style={[styles.bottomBarIcon, activeTab === 'live' && styles.bottomBarIconActive]}>
-            <LayoutGrid color={activeTab === 'live' ? '#1A1308' : '#8E9299'} size={22} />
-          </View>
+          <motion.div
+            whileTap={{ scale: 0.88 }}
+            animate={{ scale: activeTab === 'live' ? 1.08 : 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 17 }}
+            style={{ display: 'contents' }}
+          >
+            <View style={[styles.bottomBarIcon, activeTab === 'live' && styles.bottomBarIconActive]}>
+              <LayoutGrid color={activeTab === 'live' ? '#1A1308' : '#8E9299'} size={22} />
+            </View>
+          </motion.div>
           <Text style={[styles.bottomBarText, activeTab === 'live' && styles.bottomBarTextActive]}>Console</Text>
         </Pressable>
         
@@ -221,9 +248,16 @@ function App() {
           style={({ pressed }) => [styles.bottomBarItem, { opacity: pressed ? 0.7 : 1 }]} 
           onPress={() => setTimeout(() => setActiveTab('stats'), 10)}
         >
-          <View style={[styles.bottomBarIcon, activeTab === 'stats' && styles.bottomBarIconActive]}>
-            <HistoryIcon color={activeTab === 'stats' ? '#1A1308' : '#8E9299'} size={22} />
-          </View>
+          <motion.div
+            whileTap={{ scale: 0.88 }}
+            animate={{ scale: activeTab === 'stats' ? 1.08 : 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 17 }}
+            style={{ display: 'contents' }}
+          >
+            <View style={[styles.bottomBarIcon, activeTab === 'stats' && styles.bottomBarIconActive]}>
+              <HistoryIcon color={activeTab === 'stats' ? '#1A1308' : '#8E9299'} size={22} />
+            </View>
+          </motion.div>
           <Text style={[styles.bottomBarText, activeTab === 'stats' && styles.bottomBarTextActive]}>History</Text>
         </Pressable>
       </View>
