@@ -3,6 +3,31 @@ import path from "path";
 import cors from "cors";
 import { Jimp } from "jimp";
 import crypto from "crypto";
+import admin from "firebase-admin";
+
+// --- Firebase Admin init (verifies real ID tokens server-side) ---
+if (!admin.apps.length) {
+  // Using default credential, might need service account depending on env
+  admin.initializeApp();
+}
+
+const ADMIN_EMAILS = new Set(['kveerpal681@gmail.com', 'aitradinggemini@gmail.com']);
+
+/**
+ * Verify a Firebase ID token from the Authorization header.
+ * Returns the decoded token if valid and the email is an admin, otherwise throws.
+ */
+async function verifyAdminToken(authHeader: string | undefined): Promise<admin.auth.DecodedIdToken> {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    throw new Error('Missing or malformed Authorization header');
+  }
+  const idToken = authHeader.slice(7);
+  const decoded = await admin.auth().verifyIdToken(idToken);
+  if (!ADMIN_EMAILS.has(decoded.email ?? '')) {
+    throw new Error('Not an admin account');
+  }
+  return decoded;
+}
 
 const MASTER_KEY = crypto.scryptSync(process.env.BACKEND_ENCRYPTION_KEY || 'ai_trading_assistant_secret_salt_2026', 'salt', 32);
 
@@ -256,10 +281,11 @@ async function startServer() {
     });
   });
 
-  app.post("/api/admin/secrets/encrypt", (req, res) => {
-    const adminEmail = req.headers['x-admin-email'];
-    if (adminEmail !== 'kveerpal681@gmail.com' && adminEmail !== 'aitradinggemini@gmail.com') {
-      return res.status(403).json({ error: "Unauthorized" });
+  app.post("/api/admin/secrets/encrypt", async (req, res) => {
+    try {
+      await verifyAdminToken(req.headers['authorization'] as string | undefined);
+    } catch (e: any) {
+      return res.status(403).json({ error: "Unauthorized: " + e.message });
     }
     const { tokens } = req.body;
     if (Array.isArray(tokens)) {
@@ -269,18 +295,18 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/secrets/decrypt", (req, res) => {
-    const adminEmail = req.headers['x-admin-email'];
-    if (adminEmail !== 'kveerpal681@gmail.com' && adminEmail !== 'aitradinggemini@gmail.com') {
-      return res.status(403).json({ error: "Unauthorized" });
+  app.post("/api/admin/secrets/decrypt", async (req, res) => {
+    try {
+      await verifyAdminToken(req.headers['authorization'] as string | undefined);
+    } catch (e: any) {
+      return res.status(403).json({ error: "Unauthorized: " + e.message });
     }
     const { encryptedTokens } = req.body;
     res.json({ tokens: decryptTokens(encryptedTokens) });
   });
 
   app.post("/api/pre-analysis", async (req, res) => {
-    const { priceHistory, correlatedAssets, liquidityMap, encryptedSystemTokens } = req.body;
-    const tokenManager = new TokenManager(encryptedSystemTokens);
+    const { priceHistory, correlatedAssets, liquidityMap } = req.body;
     
     try {
       // 1. Structural Priors (CEF & Transfer Entropy)
@@ -393,22 +419,23 @@ async function startServer() {
       let optimizedBase64: string;
       
       try {
-        const buffer = Buffer.from(image, 'base64');
+        const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
+        const buffer = Buffer.from(base64Data, 'base64');
         const jimpImage = await Jimp.read(buffer);
-        console.log(`[API] Jimp processing: ${jimpImage.width}x${jimpImage.height}`);
+        console.log(`[API] Jimp processing: ${jimpImage.bitmap.width}x${jimpImage.bitmap.height}`);
         
         // Resize if too large
-        if (jimpImage.width > 1024 || jimpImage.height > 1024) {
-          jimpImage.contain({ width: 1024, height: 1024 });
+        if (jimpImage.bitmap.width > 1024 || jimpImage.bitmap.height > 1024) {
+          jimpImage.scaleToFit(1024, 1024);
         }
 
-        // Jimp v1: set quality directly in getBuffer options if possible, or use the v1 method if available
-        const compressedImage = await jimpImage.getBuffer("image/jpeg", { quality: 85 });
+        // Jimp v0.x / 1.x compatibility
+        const compressedImage = await jimpImage.getBufferAsync("image/jpeg");
         optimizedBase64 = compressedImage.toString('base64');
         console.log(`[API] Image optimization complete`);
       } catch (jimpErr: any) {
         console.error("[API] Jimp optimization failed, using original:", jimpErr.message);
-        optimizedBase64 = image;
+        optimizedBase64 = image.replace(/^data:image\/\w+;base64,/, "");
       }
 
       // Helper function for serial model calls with timeout and model fallback
@@ -742,6 +769,122 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
     } catch (error: any) {
       console.error("Scout error:", error);
       res.status(500).json({ error: "Scout processing failed", details: error.message });
+    }
+  });
+
+  app.post("/api/autopsy", async (req, res) => {
+    try {
+      const { image, debateData, tradeSignal, encryptedSystemTokens } = req.body;
+      const tokenManager = new TokenManager(encryptedSystemTokens);
+      if (!image || !debateData) return res.status(400).json({ error: "Missing inputs" });
+      
+      const prompt = `
+You are a forensic trading analyst. A binary options signal was given but the actual market moved in the OPPOSITE direction — this is a confirmed LOSS. Your job is to identify EXACTLY what caused this failure.
+
+You will receive:
+1. The original signal data (JSON below).
+2. A screenshot of the real chart showing what actually happened after the signal.
+
+ANALYZE the result image carefully. Then cross-examine every layer of the signal pipeline.
+
+YOUR TASK: Diagnose the failure across these 7 categories. For each, output a severity score (0 = not a factor, 1 = minor, 2 = moderate, 3 = critical) and a specific explanation.
+
+CATEGORY 1 — VISION EXTRACTION ERROR
+Did the LLM misread the chart? Check if the extracted OHLC data or key levels look inconsistent with what you see in the result image. Signs: candle directions wrong, price levels implausible, key levels missing obvious support/resistance.
+Severity: 0-3. Explanation: [specific evidence]
+
+CATEGORY 2 — CEF / MATH ORACLE MISFIRE
+Was the Causal Entropic Force (CEF) direction wrong? Did the Hamiltonian Flow predict the wrong momentum? Was Wasserstein Distance misleadingly low? Was RQA Determinism high but the market broke structure anyway?
+Severity: 0-3. Explanation: [specific evidence]
+
+CATEGORY 3 — J4 BOUNDARY REVERSAL ERROR
+Was the J4 boundary score misleading? If J4 gave points to the wrong side based on price Y-position, and the price actually reversed in that direction, J4 was working against the signal.
+Severity: 0-3. Explanation: [specific evidence]
+
+CATEGORY 4 — JUDGE SCORING BIAS (J1/J2)
+Did the Judge over-score J1 or J2 for the winning side? Were the argument quality or context alignment scores inflated despite the bear/bull case being weak? Did the Arbitrator have to correct the LLM (indicating score inconsistency)?
+Severity: 0-3. Explanation: [specific evidence]
+
+CATEGORY 5 — AGENT ARGUMENT WEAKNESS
+Did the winning agent (Bull or Bear) use generic reasoning? Did it fail to cite specific candle evidence? Did the Skeptic assign a low riskProbability when the real risk was clearly there? Did both agents use overlapping techniques (lazy analysis)?
+Severity: 0-3. Explanation: [specific evidence]
+
+CATEGORY 6 — MARKET CONDITION MISMATCH
+Was the market actually FLAT/CHOPPY and a NO_TRADE should have been called? Did the judge report market as CLEAN when volatility was low? Was confidence just barely above 70% (borderline trade that shouldn't have been taken)?
+Severity: 0-3. Explanation: [specific evidence]
+
+CATEGORY 7 — LATENCY / TIMING MISMATCH
+Did the 90-second latency-adjusted forecast correctly identify direction but the actual result window was different? Was the entry timing (NOW vs WAIT) wrong relative to what the real chart shows?
+Severity: 0-3. Explanation: [specific evidence]
+
+---
+
+PRIMARY ROOT CAUSE: Identify the 1–2 categories with the highest severity as the PRIMARY cause of this loss.
+
+SYSTEM RECOMMENDATION: Based on the primary cause, give ONE specific, actionable recommendation for improving the pipeline. Be concrete — name the exact function, prompt section, or agent that needs to change.
+
+OUTPUT FORMAT — Respond ONLY with this JSON, no preamble:
+{
+  "tradeSignal": "${tradeSignal}",
+  "actualOutcome": "Brief description of what price actually did",
+  "categories": {
+    "visionExtraction": { "severity": 0, "label": "Vision Extraction", "explanation": "..." },
+    "mathOracleMisfire": { "severity": 0, "label": "Math Oracle Misfire", "explanation": "..." },
+    "j4BoundaryError": { "severity": 0, "label": "J4 Boundary Error", "explanation": "..." },
+    "judgeScoringBias": { "severity": 0, "label": "Judge Scoring Bias", "explanation": "..." },
+    "agentArgumentWeakness": { "severity": 0, "label": "Agent Argument Weakness", "explanation": "..." },
+    "marketConditionMismatch": { "severity": 0, "label": "Market Condition Mismatch", "explanation": "..." },
+    "latencyTimingMismatch": { "severity": 0, "label": "Latency Timing Mismatch", "explanation": "..." }
+  },
+  "primaryRootCause": ["visionExtraction"],
+  "systemRecommendation": "One specific actionable fix naming the exact component/function/prompt section",
+  "autopsyVerdict": "2–3 sentence plain English summary of what went wrong and why"
+}
+
+---
+ORIGINAL DEBATE DATA:
+${JSON.stringify(debateData, null, 2)}
+
+JUDGE DECISION STEPS (context for judging reasoning):
+1. Receives: Bull reasoning + techniques, Bear reasoning + techniques, Skeptic risk report, J4 fixed points (pre-calculated from boundary math), Structural Priors, Geometric Oracles.
+2. Scores J1 (Argument Quality, max 4): Awards points based on specificity of candle evidence, technique diversity, and absence of generic reasoning.
+3. Scores J2 (Context Alignment, max 4): Awards points based on how well the winning argument aligns with the structural priors.
+4. Uses J4 as given (pre-calculated fixed points).
+5. Adds totals: J1 + J2 + J4 = total (max 11).
+6. Checks: if BOTH sides < 6.5 -> NO_TRADE. If finalConfidence < 70% -> NO_TRADE.
+7. Picks the higher total as winner -> CALL (Bull) or PUT (Bear).
+8. Arbitrator post-check: if LLM winner has lower score, override to match math.
+`;
+
+      const rawResponse = await callModel({
+        model: "gpt-4o",
+        prompt,
+        image,
+        jsonMode: true,
+        tokenManager
+      });
+
+      if (!rawResponse) throw new Error("Empty response from AI");
+      
+      let cleanRaw = rawResponse.replace(/```json|```/g, '').trim();
+      const start = cleanRaw.indexOf('{');
+      const end = cleanRaw.lastIndexOf('}');
+      if (start !== -1 && end !== -1) cleanRaw = cleanRaw.substring(start, end + 1);
+
+      res.json(JSON.parse(cleanRaw));
+    } catch (error: any) {
+      console.error("Autopsy error:", error);
+      res.status(500).json({ error: "Autopsy failed", details: error.message });
+    }
+  });
+
+  app.post("/api/log-autopsy", async (req, res) => {
+    try {
+      console.log("[Sheety Log Mock] Received autopsy log:", req.body);
+      // Mocking sheety response
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

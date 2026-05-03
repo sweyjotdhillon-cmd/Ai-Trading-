@@ -1,0 +1,284 @@
+import { useState, useRef } from 'react';
+import { View, Text, Pressable, ScrollView, Modal, ActivityIndicator, Platform } from 'react-native';
+import { X, Upload, Activity, AlertTriangle, CheckCircle, Search } from 'lucide-react';
+import tw from 'twrnc';
+import { motion } from 'motion/react';
+
+interface Props {
+  isOpen: boolean;
+  onClose: () => void;
+  analysisData: any; // Original JSON
+  tradeSignal: string; // CALL or PUT
+  encryptedSystemTokens?: string; // For backend auth
+}
+
+export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, encryptedSystemTokens }: Props) {
+  const [resultImage, setResultImage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [autopsyResult, setAutopsyResult] = useState<any | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLogged, setIsLogged] = useState(false);
+  
+  const fileInputRef = useRef<any>(null);
+
+  const handlePickResultImage = () => {
+    if (Platform.OS === 'web') {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setResultImage(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const runAutopsy = async () => {
+    if (!resultImage || !analysisData) return;
+    setLoading(true);
+    setError(null);
+    setAutopsyResult(null);
+
+    try {
+      const res = await fetch('/api/autopsy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: resultImage,
+          debateData: analysisData,
+          tradeSignal,
+          encryptedSystemTokens
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to run autopsy. Server responded with error.");
+      }
+
+      const data = await res.json();
+      setAutopsyResult(data);
+    } catch (err: any) {
+      setError(err.message || 'Unknown error occurred.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const logToSheets = async () => {
+    if (!autopsyResult) return;
+    try {
+      // Find top severity category
+      let topCategory = 'None';
+      let maxSev = -1;
+      Object.values(autopsyResult.categories).forEach((val: any) => {
+        if (val.severity > maxSev) {
+          maxSev = val.severity;
+          topCategory = val.label;
+        }
+      });
+      
+      const payload = {
+         tradeNum: analysisData?.id || Date.now(),
+         tradeSignal: autopsyResult.tradeSignal,
+         actualOutcome: autopsyResult.actualOutcome,
+         primaryRootCause: (autopsyResult.primaryRootCause || []).join(', '),
+         topSeverityCategory: topCategory,
+         systemRecommendation: autopsyResult.systemRecommendation,
+         autopsyVerdict: autopsyResult.autopsyVerdict,
+         visionSeverity: autopsyResult.categories.visionExtraction?.severity || 0,
+         mathSeverity: autopsyResult.categories.mathOracleMisfire?.severity || 0,
+         j4Severity: autopsyResult.categories.j4BoundaryError?.severity || 0,
+         judgeSeverity: autopsyResult.categories.judgeScoringBias?.severity || 0,
+         agentSeverity: autopsyResult.categories.agentArgumentWeakness?.severity || 0,
+         marketSeverity: autopsyResult.categories.marketConditionMismatch?.severity || 0,
+         latencySeverity: autopsyResult.categories.latencyTimingMismatch?.severity || 0
+      };
+
+      await fetch('/api/log-autopsy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      setIsLogged(true);
+    } catch (e) {
+      console.error("Failed to log to Sheety", e);
+      alert("Failed to log autopsy.");
+    }
+  };
+
+  const getSeverityColor = (severity: number) => {
+    if (severity === 0) return 'text-gray-400 border-gray-400 bg-gray-500/10';
+    if (severity === 1) return 'text-yellow-400 border-yellow-400 bg-yellow-500/10';
+    if (severity === 2) return 'text-orange-400 border-orange-400 bg-orange-500/10';
+    return 'text-red-500 border-red-500 bg-red-500/10';
+  };
+
+  const getSeverityLabel = (severity: number) => {
+    if (severity === 0) return 'CLEAR';
+    if (severity === 1) return 'MINOR';
+    if (severity === 2) return 'MODERATE';
+    return 'CRITICAL';
+  };
+
+  return (
+    <Modal visible={isOpen} transparent={true} animationType="slide">
+      <View style={tw`flex-1 bg-black/90 justify-center items-center py-10 px-4`}>
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="bg-[#14161C] w-full max-w-4xl border border-red-500/30 rounded-2xl flex-1 max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative"
+        >
+          {Platform.OS === 'web' && (
+            <input type="file" ref={fileInputRef} accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
+          )}
+
+          {/* Header */}
+          <div style={tw`flex-row items-center justify-between p-6 border-b border-white/5`}>
+            <View>
+              <Text style={tw`text-red-500 font-black text-2xl tracking-[2px] uppercase`}>LOSS AUTOPSY</Text>
+              <Text style={tw`text-white/60 text-sm`}>Signal was {tradeSignal}. Actual market went opposite.</Text>
+            </View>
+            <Pressable onPress={onClose} style={tw`p-2 bg-white/5 rounded-full hover:bg-white/10`}>
+              <X size={24} color="#8B95B0" />
+            </Pressable>
+          </div>
+
+          <ScrollView style={tw`flex-1 p-6`} contentContainerStyle={tw`pb-10`}>
+            
+            {!autopsyResult && !loading && (
+              <View style={tw`items-center justify-center py-10`}>
+                <Text style={tw`text-white mb-6 text-center max-w-lg mb-8`}>
+                  Upload a screenshot of the LIVE CHART showing the actual price action after the signal was received. 
+                  The AI will forensically analyze the extracted math variables, agent logs, and the chart to determine why the trade failed.
+                </Text>
+                
+                {resultImage ? (
+                  <View style={tw`items-center`}>
+                    <img src={resultImage} style={{ width: 300, height: 'auto', borderRadius: 12, marginBottom: 20, border: '1px solid rgba(255,255,255,0.1)' }} />
+                    <Pressable 
+                      onPress={runAutopsy}
+                      style={({pressed}) => [tw`bg-red-600 px-8 py-4 rounded-xl flex-row items-center`, { opacity: pressed ? 0.7:1}]}
+                    >
+                      <Search size={20} color="white" style={tw`mr-3`} />
+                      <Text style={tw`text-white font-black text-lg tracking-[1px]`}>RUN FORENSIC AUTOPSY</Text>
+                    </Pressable>
+                    <Pressable onPress={handlePickResultImage} style={tw`mt-4`}>
+                      <Text style={tw`text-white/60 text-sm underline`}>Change Image</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Pressable 
+                    onPress={handlePickResultImage}
+                    style={tw`border-2 border-dashed border-white/20 p-10 rounded-2xl items-center bg-white/5 hover:bg-white/10`}
+                  >
+                    <Upload size={32} color="#8B95B0" style={tw`mb-4`} />
+                    <Text style={tw`text-white font-bold mb-1`}>Upload Post-Trade Chart</Text>
+                    <Text style={tw`text-gray-400 text-xs`}>Paste or select screenshot</Text>
+                  </Pressable>
+                )}
+                {error && (
+                  <Text style={tw`text-red-500 mt-6`}>{error}</Text>
+                )}
+              </View>
+            )}
+
+            {loading && (
+              <View style={tw`items-center justify-center py-20`}>
+                <ActivityIndicator size="large" color="#EF4444" style={tw`mb-6 scale-150`} />
+                <Text style={tw`text-red-400 font-black tracking-[4px] text-xl animate-pulse`}>RUNNING FORENSIC ANALYSIS...</Text>
+                <Text style={tw`text-white/60 text-xs mt-4`}>Cross-examining math oracles, agent logic, and post-trade chart data.</Text>
+              </View>
+            )}
+
+            {autopsyResult && (
+              <View>
+                {/* Highlight Primary Root Cause */}
+                <View style={tw`bg-gradient-to-r from-red-900/40 to-transparent border border-red-500/50 p-6 rounded-2xl mb-8`}>
+                  <Text style={tw`text-red-400 font-black text-lg uppercase tracking-[2px] mb-2`}>Primary Root Cause</Text>
+                  <View style={tw`flex-row flex-wrap gap-2 mb-4`}>
+                    {(autopsyResult.primaryRootCause || []).map((cause: string, i: number) => (
+                      <View key={i} style={tw`bg-red-500 px-3 py-1 rounded-md`}>
+                        <Text style={tw`text-white font-black text-xs`}>{cause}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  
+                  <div style={tw`bg-black/40 p-4 rounded-xl border border-red-500/30 flex-row`}>
+                    <AlertTriangle size={24} color="#FCA5A5" style={tw`mr-4 mt-1`} />
+                    <View style={tw`flex-1`}>
+                      <Text style={tw`text-red-300 font-bold mb-1`}>System Recommendation</Text>
+                      <Text style={tw`text-red-100 text-sm leading-relaxed`}>{autopsyResult.systemRecommendation}</Text>
+                    </View>
+                  </div>
+                </View>
+
+                {/* Autopsy Verdict */}
+                <View style={tw`mb-8`}>
+                   <Text style={tw`text-white/40 text-xs font-black uppercase tracking-[2px] mb-2`}>Final Verdict</Text>
+                   <Text style={tw`text-white text-base leading-relaxed`}>{autopsyResult.autopsyVerdict}</Text>
+                </View>
+
+                {/* Categories breakdown */}
+                <Text style={tw`text-white/40 text-xs font-black uppercase tracking-[2px] mb-4`}>Forensic Breakdown (7 Layers)</Text>
+                <View style={tw`gap-3 mb-8`}>
+                  {Object.entries(autopsyResult.categories || {}).map(([key, val]: any) => (
+                    <View key={key} style={tw`bg-white/5 border border-white/10 rounded-xl p-4`}>
+                      <View style={tw`flex-row items-center justify-between mb-2`}>
+                        <Text style={tw`text-[#D9B382] font-bold text-sm uppercase`}>{val.label || key}</Text>
+                        <View style={tw`px-2 py-1 rounded-sm border ${getSeverityColor(val.severity)}`}>
+                          <Text style={tw`text-[10px] font-black ${getSeverityColor(val.severity).split(' ')[0]}`}>
+                            {getSeverityLabel(val.severity)} ({val.severity})
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={tw`text-white/70 text-sm leading-relaxed`}>{val.explanation}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Footer buttons */}
+                <View style={tw`flex-row gap-4 border-t border-white/10 pt-6`}>
+                  <Pressable 
+                    onPress={logToSheets}
+                    disabled={isLogged}
+                    style={({pressed}) => [tw`flex-1 py-4 justify-center items-center rounded-xl flex-row transition-all`, 
+                      isLogged ? tw`bg-green-600/20 border border-green-500/50` : tw`bg-white/10 border border-white/20 hover:bg-white/20`,
+                      { opacity: pressed && !isLogged ? 0.7 : 1}
+                    ]}
+                  >
+                    {isLogged ? (
+                      <>
+                        <CheckCircle size={18} color="#22C55E" style={tw`mr-2`} />
+                        <Text style={tw`text-green-500 font-bold uppercase`}>Logged to Sheets</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Activity size={18} color="white" style={tw`mr-2`} />
+                        <Text style={tw`text-white font-bold uppercase`}>Log This Autopsy</Text>
+                      </>
+                    )}
+                  </Pressable>
+                  
+                  <Pressable 
+                    onPress={onClose}
+                    style={({pressed}) => [tw`py-4 px-8 bg-white/5 border border-white/10 justify-center items-center rounded-xl transition-all hover:bg-white/10`, { opacity: pressed ? 0.7 : 1}]}
+                  >
+                    <Text style={tw`text-white font-bold uppercase`}>Close</Text>
+                  </Pressable>
+                </View>
+
+              </View>
+            )}
+
+          </ScrollView>
+        </motion.div>
+      </View>
+    </Modal>
+  );
+}

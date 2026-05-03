@@ -41,17 +41,20 @@ export function SystemSettingsModal({ show, onClose }: Props) {
             setSystemTokenCount(data.systemTokenCount);
           }
           if (isAdmin && data.encryptedTokens) {
-            // Decrypt it to show to admin
-            fetch('/api/admin/secrets/decrypt', {
-              method: 'POST',
-              headers: { 
-                 'Content-Type': 'application/json',
-                 'x-admin-email': auth.currentUser?.email || '' 
-              },
-              body: JSON.stringify({ encryptedTokens: data.encryptedTokens })
-            }).then(r => r.json()).then(res => {
-              if (res.tokens) setAdminTokens(res.tokens);
-            }).catch(e => console.warn(e));
+            // Get a real Firebase ID token to prove identity to the server
+            auth.currentUser!.getIdToken().then(idToken => {
+              // Decrypt it to show to admin
+              fetch('/api/admin/secrets/decrypt', {
+                method: 'POST',
+                headers: { 
+                   'Content-Type': 'application/json',
+                   'Authorization': `Bearer ${idToken}`
+                },
+                body: JSON.stringify({ encryptedTokens: data.encryptedTokens })
+              }).then(r => r.json()).then(res => {
+                if (res.tokens) setAdminTokens(res.tokens);
+              }).catch(e => console.warn(e));
+            });
           }
         }
       });
@@ -61,12 +64,14 @@ export function SystemSettingsModal({ show, onClose }: Props) {
   const saveAdminSystemTokens = async (tokensToSave: string[]) => {
     setAdminTokenStatus('saving');
     try {
-      // 1. Encrypt them on backend
+      // 1. Get a real Firebase ID token to authenticate with the server
+      const idToken = await auth.currentUser!.getIdToken();
+      // 2. Encrypt them on backend
       const res = await fetch('/api/admin/secrets/encrypt', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-admin-email': auth.currentUser?.email || ''
+          'Authorization': `Bearer ${idToken}`
         },
         body: JSON.stringify({ tokens: tokensToSave })
       });

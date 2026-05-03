@@ -30,6 +30,7 @@ import {
 import tw from 'twrnc';
 import { db } from '../firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
+import { LossAutopsyModal } from './LossAutopsyModal';
 
 const JUDGE_TASKS = {
   judge1: ["Scanning support nodes...", "Evaluating volume nodes...", "Mapping price patterns...", "Analyzing breakouts...", "Finalizing Bullish Case..."],
@@ -135,6 +136,8 @@ export function LiveAnalysis() {
   const [statsFileName, setStatsFileName] = useState<string | null>(null);
 
   const [isStatsSaved, setIsStatsSaved] = useState(false);
+  const [confirmedOutcome, setConfirmedOutcome] = useState<'WIN' | 'LOSS' | null>(null);
+  const [showAutopsyModal, setShowAutopsyModal] = useState(false);
 
   const fileInputRef = useRef<any>(null);
   const techInputRef = useRef<any>(null);
@@ -167,6 +170,8 @@ export function LiveAnalysis() {
     setTradingPhase('IDLE');
     setTradingDirection(null);
     setIsStatsSaved(false);
+    setConfirmedOutcome(null);
+    setShowAutopsyModal(false);
     setMode('camera');
     setStockName('Bitcoin');
     setGraphTimeframe('30 minutes');
@@ -238,9 +243,26 @@ export function LiveAnalysis() {
   };
 
   useEffect(() => {
-    let timeoutId: any;
     let isMounted = true;
     let isFetching = false;
+    let worker: Worker | null = null;
+    
+    // Create a Web Worker for reliable background checking, preventing browser timeout throttling.
+    if (typeof window !== 'undefined') {
+      const code = `
+        let timerId;
+        self.onmessage = function(e) {
+          if (e.data.command === 'start') {
+             clearTimeout(timerId);
+             timerId = setTimeout(() => self.postMessage('tick'), e.data.interval);
+          } else if (e.data.command === 'stop') {
+             clearTimeout(timerId);
+          }
+        };
+      `;
+      const blob = new Blob([code], { type: 'application/javascript' });
+      worker = new Worker(URL.createObjectURL(blob));
+    }
 
     const startScoutLoop = async () => {
       if (!isMounted || !scoutActive || !analysis || !isCameraActive || !videoRef.current) return;
@@ -298,20 +320,33 @@ export function LiveAnalysis() {
         // High-speed mode: subtract the time spent processing to hit the next window exactly
         const elapsed = Date.now() - startTime;
         const nextTick = Math.max(500, currentInterval - elapsed); 
-        timeoutId = setTimeout(() => startScoutLoop().catch(console.error), nextTick);
+        if (worker) {
+           worker.postMessage({ command: 'start', interval: nextTick });
+        }
       }
     };
 
+    if (worker) {
+      worker.onmessage = () => {
+        if (isMounted) startScoutLoop().catch(console.error);
+      };
+    }
+
     if (scoutActive && analysis && isCameraActive && videoRef.current) {
       const initialInterval = (tradingPhase === 'WAITING_FOR_ENTRY' || tradingPhase === 'ENTRY_CONFIRMED') ? 2000 : 10000;
-      timeoutId = setTimeout(() => startScoutLoop().catch(console.error), initialInterval);
+      if (worker) {
+         worker.postMessage({ command: 'start', interval: initialInterval });
+      }
     }
     
     return () => {
       isMounted = false;
-      if (timeoutId) clearTimeout(timeoutId);
+      if (worker) {
+        worker.postMessage({ command: 'stop' });
+        worker.terminate();
+      }
     };
-  }, [scoutActive, analysis, isCameraActive, tradingPhase]);
+  }, [scoutActive, analysis, isCameraActive, tradingPhase, encryptedSystemTokens]);
 
   const closePickers = () => {
     setShowTfPicker(false);
@@ -440,6 +475,7 @@ export function LiveAnalysis() {
       const updatedStats = [...statsData, newEntry];
       setStatsData(updatedStats);
       setIsStatsSaved(true);
+      setConfirmedOutcome(outcome);
 
       // Also persist to current session storage for the local view
       const existing = sessionStorage.getItem('stats_surface_data');
@@ -736,6 +772,13 @@ export function LiveAnalysis() {
   return (
     <View style={[tw`flex-1 bg-black relative`, { height: '100%' }]}>
       {/* Full Screen High-Intensity Overlays */}
+      <LossAutopsyModal
+        isOpen={showAutopsyModal}
+        onClose={() => setShowAutopsyModal(false)}
+        analysisData={analysis}
+        tradeSignal={analysis?.judge?.winner === 'BULL' ? 'CALL' : (analysis?.judge?.winner === 'BEAR' ? 'PUT' : 'WAIT')}
+        encryptedSystemTokens={encryptedSystemTokens}
+      />
       <Modal
         visible={tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection}
         transparent={true}
@@ -1354,6 +1397,16 @@ export function LiveAnalysis() {
                       <Check size={16} color="#22C55E" style={tw`mr-2`} />
                       <Text style={tw`text-white text-xs font-bold`}>Entry added to statistics sequence.</Text>
                     </View>
+                    
+                    {confirmedOutcome === 'LOSS' && (
+                      <Pressable 
+                        onPress={() => setShowAutopsyModal(true)}
+                        style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-4`, { opacity: pressed ? 0.7 : 1 }]}
+                      >
+                        <AlertTriangle size={16} color="white" style={tw`mr-2`} />
+                        <Text style={tw`text-white font-black uppercase text-xs tracking-[1px]`}>RUN LOSS AUTOPSY</Text>
+                      </Pressable>
+                    )}
                     
                     <Pressable 
                       onPress={handleDownloadStats}

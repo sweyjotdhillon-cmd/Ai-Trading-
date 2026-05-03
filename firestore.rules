@@ -213,7 +213,9 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow read: if isAuthenticated();
+      // Non-system settings are readable by any authenticated user.
+      // settings/system contains encryptedTokens  restrict read to admins only.
+      allow read: if settingId != 'system' && isAuthenticated() || isAdmin();
       // Allow admins to write anything
       // Allow any authenticated user to disable aiAccessMode if it's expired (30 min)
       allow update: if isAdmin() || (
