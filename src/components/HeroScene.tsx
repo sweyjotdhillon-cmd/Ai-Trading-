@@ -13,10 +13,12 @@ export default function HeroScene({ isHovered, warpPhase, reducedMotion }: { isH
   const { camera, pointer } = useThree();
   const groupRef = useRef<THREE.Group>(null);
   const gridGroupRef = useRef<THREE.Group>(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 640 : false);
 
   useEffect(() => {
-    setIsMobile(window.innerWidth < 640);
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   useEffect(() => {
@@ -68,7 +70,7 @@ export default function HeroScene({ isHovered, warpPhase, reducedMotion }: { isH
       <group ref={groupRef}>
         <Candle isHovered={isHovered} warpPhase={warpPhase} reducedMotion={reducedMotion} />
         <Rings isMobile={isMobile} reducedMotion={reducedMotion} />
-        <Particles count={isMobile ? 400 : 1500} reducedMotion={reducedMotion} />
+        <Particles key={isMobile ? 'mobile' : 'desktop'} count={isMobile ? 400 : 1500} reducedMotion={reducedMotion} />
       </group>
 
       <group ref={gridGroupRef} position={[0, -2.2, 0]}>
