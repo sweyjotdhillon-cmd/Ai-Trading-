@@ -22,6 +22,7 @@ import {
   FileText,
   Download,
   Terminal,
+  Activity,
   XCircle,
   ChevronDown,
   Check,
@@ -79,7 +80,7 @@ export function LiveAnalysis() {
   const [isBusy, setIsBusy] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
-  const [mode, setMode] = useState<'camera' | 'upload'>('camera');
+  const [mode, setMode] = useState<'camera' | 'upload' | 'test'>('camera');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   // Live Trading Loop States
@@ -560,27 +561,6 @@ export function LiveAnalysis() {
         setTradingPhase('ANALYSING_DIRECTION');
         setAnalysisStep(`SYNCHRONIZING ${techniquesList.length} TECHNIQUES...`);
 
-        // Optimize image for transmission (web canvas resize)
-        const optimizedImage = await downscaleImage(finalImageToAnalyze);
-        const base64Data = optimizedImage.split(',')[1];
-        
-        setJudgeLogs({
-          judge1: { text: "Initializing Deep Scan...", status: 'active' },
-          judge2: { text: "Initializing Deep Scan...", status: 'active' },
-          judge3: { text: "Initializing Deep Scan...", status: 'active' },
-          judge4: { text: "Initializing Deep Scan...", status: 'active' },
-          system: { text: "Injecting global context...", status: 'active' }
-        });
-
-        controller = new AbortController();
-        timeoutId = setTimeout(() => {
-          try {
-            controller?.abort();
-          } catch (e) {
-            console.warn("Manual abort failed", e);
-          }
-        }, 360000); // Increased to 360s Safety Timeout
-
         const fetchWithRetry = async (url: string, options: any, retries: number = 2): Promise<Response> => {
         if (options.signal?.aborted) {
           throw new Error("Request aborted before retry");
@@ -600,6 +580,69 @@ export function LiveAnalysis() {
           throw err;
         }
       };
+
+        controller = new AbortController();
+        timeoutId = setTimeout(() => {
+          try {
+            controller?.abort();
+          } catch (e) {
+            console.warn("Manual abort failed", e);
+          }
+        }, 360000); // Increased to 360s Safety Timeout
+
+        // Optimize image for transmission (web canvas resize)
+        const optimizedImageForCrop = await downscaleImage(finalImageToAnalyze!);
+
+        let finalImageForAnalysis = optimizedImageForCrop;
+        let rightSliceBase64: string | null = null;
+        let autoOutcomePromise: Promise<any> | null = null;
+
+        if (mode === 'test' && Platform.OS === 'web' && optimizedImageForCrop) {
+           const parseDuration = parseInt(investmentDuration);
+           const parseTimeframe = parseInt(graphTimeframe);
+           if (!isNaN(parseDuration) && !isNaN(parseTimeframe) && parseTimeframe > 0) {
+              const cropRatio = Math.min(0.5, parseDuration / parseTimeframe);
+              
+              const img = new window.Image();
+              await new Promise((resolve) => {
+                 img.onload = resolve;
+                 img.onerror = resolve;
+                 img.src = optimizedImageForCrop;
+              });
+              
+              const leftCanvas = document.createElement('canvas');
+              const rightCanvas = document.createElement('canvas');
+              const leftW = Math.max(1, img.width * (1 - cropRatio));
+              const rightW = Math.max(1, img.width * cropRatio);
+              
+              leftCanvas.width = leftW;
+              leftCanvas.height = img.height;
+              leftCanvas.getContext('2d')?.drawImage(img, 0, 0, leftW, img.height, 0, 0, leftW, img.height);
+              
+              rightCanvas.width = rightW;
+              rightCanvas.height = img.height;
+              rightCanvas.getContext('2d')?.drawImage(img, leftW, 0, rightW, img.height, 0, 0, rightW, img.height);
+              
+              finalImageForAnalysis = leftCanvas.toDataURL('image/jpeg', 0.88);
+              rightSliceBase64 = rightCanvas.toDataURL('image/jpeg', 0.88);
+
+              autoOutcomePromise = fetchWithRetry('/api/read-outcome', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: rightSliceBase64, encryptedSystemTokens })
+              }).then(r => r.json());
+           }
+        }
+
+        const base64Data = finalImageForAnalysis.split(',')[1];
+        
+        setJudgeLogs({
+          judge1: { text: "Initializing Deep Scan...", status: 'active' },
+          judge2: { text: "Initializing Deep Scan...", status: 'active' },
+          judge3: { text: "Initializing Deep Scan...", status: 'active' },
+          judge4: { text: "Initializing Deep Scan...", status: 'active' },
+          system: { text: "Injecting global context...", status: 'active' }
+        });
 
       // 1. START DATA FETCH
       const apiCall = fetchWithRetry('/api/debate', {
@@ -648,7 +691,11 @@ export function LiveAnalysis() {
       });
 
       const minTimer = new Promise(r => setTimeout(r, 7000));
-      const [response] = await Promise.all([apiCall, minTimer]) as [Response, any];
+      const [response, , autoOutcomeResult] = await Promise.all([
+        apiCall, 
+        minTimer,
+        autoOutcomePromise ? autoOutcomePromise.catch(e => { console.error('AutoOutcome error:', e); return null; }) : Promise.resolve(null)
+      ]) as [Response, any, any];
       clearTimeout(timeoutId);
 
       const contentType = response.headers.get('content-type');
@@ -737,6 +784,15 @@ export function LiveAnalysis() {
              setAnalysisStep(finalConfidence < 70 ? `LOW CONFIDENCE (${finalConfidence}%) - ABORTED` : 'SIGNAL ABORTED');
           } else {
              setAnalysisStep('SIGNAL CONFIRMED - EXECUTE NOW!');
+             
+             if (mode === 'test' && autoOutcomeResult) {
+                const autoOutcomeDirection = autoOutcomeResult.outcome;
+                const isWin = (direction === 'UP' && autoOutcomeDirection === 'UP') || (direction === 'DOWN' && autoOutcomeDirection === 'DOWN');
+                setTimeout(() => {
+                   saveToStats(data, isWin ? 'WIN' : 'LOSS');
+                   alert(`Auto-Test Complete!\nAI Signal: ${direction}\nActual Outcome: ${autoOutcomeDirection}\nResult: ${isWin ? 'WIN' : 'LOSS'}`);
+                }, 1000);
+             }
           }
         }
         
@@ -993,13 +1049,13 @@ export function LiveAnalysis() {
             <View style={tw`flex-row justify-between items-center mb-3`}>
                <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Chart Feed</Text>
                <View style={tw`flex-row bg-black/40 rounded-lg p-0.5 border border-white/5`}>
-                  {(['camera', 'upload'] as const).map((m) => (
+                  {(['camera', 'upload', 'test'] as const).map((m) => (
                     <Pressable
                       key={m}
                       onPress={() => setMode(m)}
                       style={({ pressed }) => [tw`px-3 py-1 rounded-md flex-row items-center`, mode === m ? tw`bg-[#D9B382]` : tw`bg-transparent`, { opacity: pressed ? 0.7 : 1 }]}
                     >
-                      {m === 'camera' ? <Camera size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Upload size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
+                      {m === 'camera' ? <Camera size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'upload' ? <Upload size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Activity size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
                       <Text style={[tw`ml-1.5 text-[8px] font-black uppercase`, mode === m ? tw`text-[#1A1308]` : tw`text-[#4B5570]`]}>{m}</Text>
                     </Pressable>
                   ))}
@@ -1160,10 +1216,10 @@ export function LiveAnalysis() {
               closePickers();
               handleAnalyze();
             }}
-            disabled={(mode === 'upload' && !selectedImage) || (mode === 'camera' && !isCameraActive) || isBusy}
+            disabled={((mode === 'upload' || mode === 'test') && !selectedImage) || (mode === 'camera' && !isCameraActive) || isBusy}
             style={({ pressed }) => [
               tw`h-14 rounded-xl items-center justify-center mt-4`,
-              ((mode === 'upload' && !selectedImage) || (mode === 'camera' && !isCameraActive) || isBusy) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
+              (((mode === 'upload' || mode === 'test') && !selectedImage) || (mode === 'camera' && !isCameraActive) || isBusy) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
               { opacity: (pressed && !isBusy) ? 0.7 : 1 }
             ]}
           >
@@ -1419,6 +1475,12 @@ export function LiveAnalysis() {
                   </View>
                 ) : (
                   <View style={tw`items-center`}>
+                    {confirmedOutcome && (
+                      <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-4 flex-row items-center border border-white/20 shadow-xl`}>
+                        {confirmedOutcome === 'WIN' ? <CheckCircle size={24} color="white" style={tw`mr-3`} /> : <XCircle size={24} color="white" style={tw`mr-3`} />}
+                        <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>{confirmedOutcome}</Text>
+                      </View>
+                    )}
                     <View style={tw`bg-white/10 px-4 py-2 rounded-lg mb-4 flex-row items-center`}>
                       <Check size={16} color="#22C55E" style={tw`mr-2`} />
                       <Text style={tw`text-white text-xs font-bold`}>Entry added to statistics sequence.</Text>

@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import cors from "cors";
-import { Jimp } from "jimp";
 import crypto from "crypto";
 import admin from "firebase-admin";
 
@@ -264,6 +263,8 @@ async function startServer() {
   // Exception limit for high-bandwidth endpoints like image analysis
   app.use('/api/debate', express.json({ limit: '50mb' }));
   app.use('/api/debate', express.urlencoded({ limit: '50mb', extended: true }));
+  app.use('/api/read-outcome', express.json({ limit: '50mb' }));
+  app.use('/api/read-outcome', express.urlencoded({ limit: '50mb', extended: true }));
 
   // Apply a standard 2mb limit globally to prevent broad DoS
   app.use(express.json({ limit: '2mb' }));
@@ -415,28 +416,8 @@ async function startServer() {
     const statsContext = statsData ? `\nPREVIOUS TRADING STATS FOR CONTINUITY:\n${JSON.stringify(statsData, null, 2)}` : "";
 
     try {
-      // Create primary optimized image for VISION
       let optimizedBase64: string;
-      
-      try {
-        const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
-        const buffer = Buffer.from(base64Data, 'base64');
-        const jimpImage = await Jimp.read(buffer);
-        console.log(`[API] Jimp processing: ${jimpImage.bitmap.width}x${jimpImage.bitmap.height}`);
-        
-        // Resize if too large
-        if (jimpImage.bitmap.width > 1024 || jimpImage.bitmap.height > 1024) {
-          jimpImage.scaleToFit(1024, 1024);
-        }
-
-        // Jimp v0.x / 1.x compatibility
-        const compressedImage = await jimpImage.getBufferAsync("image/jpeg");
-        optimizedBase64 = compressedImage.toString('base64');
-        console.log(`[API] Image optimization complete`);
-      } catch (jimpErr: any) {
-        console.error("[API] Jimp optimization failed, using original:", jimpErr.message);
-        optimizedBase64 = image.replace(/^data:image\/\w+;base64,/, "");
-      }
+      optimizedBase64 = image.replace(/^data:image\/\w+;base64,/, "");
 
       // Helper function for serial model calls with timeout and model fallback
       const safeCall = async (prompt: string, img?: string, json: boolean = true, highReasoning: boolean = false) => {
@@ -708,6 +689,35 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
     } catch (error: any) {
       console.error("Debate error:", error);
       res.status(500).json({ error: error.message || "Debate failed" });
+    }
+  });
+
+  app.post("/api/read-outcome", async (req, res) => {
+    try {
+      const { image, encryptedSystemTokens } = req.body;
+      const tokenManager = new TokenManager(encryptedSystemTokens);
+      if (!image) {
+        return res.status(400).json({ error: "Missing image data" });
+      }
+
+      let optimizedBase64: string;
+      optimizedBase64 = image.replace(/^data:image\/\w+;base64,/, "");
+
+      const prompt = "This is a small cropped section of a financial candlestick chart showing the rightmost portion (the most recent price movement). Based on where the price ended compared to where it started on the left edge of this image, did the price go UP or DOWN overall? Reply with only one word: UP or DOWN.";
+      
+      const response = await callModel({
+          model: "gpt-4o-mini",
+          prompt,
+          image: optimizedBase64,
+          jsonMode: false,
+          tokenManager
+      });
+
+      const upOrDown = response?.toUpperCase().includes('UP') ? 'UP' : 'DOWN';
+      res.json({ outcome: upOrDown });
+    } catch (error: any) {
+      console.error("Read outcome error:", error);
+      res.status(500).json({ error: error.message || "Read outcome failed" });
     }
   });
 
