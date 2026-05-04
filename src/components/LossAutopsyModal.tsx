@@ -170,7 +170,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
           <div style={tw`flex-row items-center justify-between p-6 border-b border-white/5`}>
             <View>
               <Text style={tw`text-red-500 font-black text-2xl tracking-[2px] uppercase`}>LOSS AUTOPSY</Text>
-              <Text style={tw`text-white/60 text-sm`}>Signal was {tradeSignal}. Actual market went opposite.</Text>
+              <Text style={tw`text-white/60 text-sm`}>Signal was {tradeSignal}. Running CONTRARIAN review against original Judge.</Text>
             </View>
             <Pressable onPress={onClose} style={tw`p-2 bg-white/5 rounded-full hover:bg-white/10`}>
               <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
@@ -227,13 +227,66 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
             {loading && (
               <View style={tw`items-center justify-center py-20`}>
                 <ActivityIndicator size="large" color="#EF4444" style={tw`mb-6 scale-150`} />
-                <Text style={tw`text-red-400 font-black tracking-[4px] text-xl animate-pulse`}>RUNNING FORENSIC ANALYSIS...</Text>
-                <Text style={tw`text-white/60 text-xs mt-4`}>Cross-examining math oracles, agent logic, and post-trade chart data.</Text>
+                <Text style={tw`text-red-400 font-black tracking-[4px] text-xl animate-pulse`}>RUNNING CONTRARIAN AUDIT...</Text>
+                <Text style={tw`text-white/60 text-xs mt-4`}>Building counter-case against the original Judge's verdict.</Text>
               </View>
             )}
 
             {autopsyResult && (
               <View>
+                {/* CONTRARIAN COUNTER-VERDICT */}
+                {autopsyResult.contrarianSignal && (
+                  <View style={tw`bg-gradient-to-r from-purple-900/40 to-amber-900/20 border border-amber-400/50 p-6 rounded-2xl mb-8`}>
+                    <View style={tw`flex-row items-center justify-between mb-3`}>
+                      <Text style={tw`text-amber-300 font-black text-lg uppercase tracking-[2px]`}>
+                        Contrarian Counter-Verdict
+                      </Text>
+                      <View style={tw`px-3 py-1 rounded-md bg-amber-500/20 border border-amber-400`}>
+                        <Text style={tw`text-amber-200 font-black text-xs`}>
+                          DEVIL'S ADVOCATE
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={tw`flex-row items-center gap-4 mb-4`}>
+                      <View style={tw`flex-1 bg-black/40 p-3 rounded-lg border border-white/10`}>
+                        <Text style={tw`text-white/40 text-[10px] uppercase tracking-wider mb-1`}>Original Judge</Text>
+                        <Text style={tw`text-red-400 font-black text-xl`}>{autopsyResult.tradeSignal}</Text>
+                        <Text style={tw`text-white/60 text-xs mt-1`}>
+                          Total: {autopsyResult.rebutScores?.originalJudge?.total ?? '—'}/11
+                        </Text>
+                      </View>
+                      <Text style={tw`text-amber-400 text-2xl font-black`}>vs</Text>
+                      <View style={tw`flex-1 bg-black/40 p-3 rounded-lg border border-amber-400/30`}>
+                        <Text style={tw`text-amber-300 text-[10px] uppercase tracking-wider mb-1`}>Contrarian Says</Text>
+                        <Text style={tw`text-amber-300 font-black text-xl`}>{autopsyResult.contrarianSignal}</Text>
+                        <Text style={tw`text-white/60 text-xs mt-1`}>
+                          Total: {autopsyResult.rebutScores?.contrarianJudge?.total ?? '—'}/11
+                          {' · '}
+                          {autopsyResult.contrarianConfidence}% conf
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={tw`text-amber-100 text-sm leading-relaxed mb-4`}>
+                      {autopsyResult.contrarianRuling}
+                    </Text>
+
+                    {Array.isArray(autopsyResult.judgeFlaws) && autopsyResult.judgeFlaws.length > 0 && (
+                      <View style={tw`bg-black/30 p-3 rounded-lg border border-amber-400/20`}>
+                        <Text style={tw`text-amber-300 font-black text-xs uppercase tracking-wider mb-2`}>
+                          Flaws in Original Judge's Reasoning
+                        </Text>
+                        {autopsyResult.judgeFlaws.map((flaw: string, i: number) => (
+                          <Text key={i} style={tw`text-white/80 text-xs leading-relaxed mb-1`}>
+                            • {flaw}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
+
                 {/* Highlight Primary Root Cause */}
                 <View style={tw`bg-gradient-to-r from-red-900/40 to-transparent border border-red-500/50 p-6 rounded-2xl mb-8`}>
                   <Text style={tw`text-red-400 font-black text-lg uppercase tracking-[2px] mb-2`}>Primary Root Cause</Text>

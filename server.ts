@@ -416,8 +416,7 @@ async function startServer() {
     const statsContext = statsData ? `\nPREVIOUS TRADING STATS FOR CONTINUITY:\n${JSON.stringify(statsData, null, 2)}` : "";
 
     try {
-      let optimizedBase64: string;
-      optimizedBase64 = image.replace(/^data:image\/\w+;base64,/, "");
+      const optimizedBase64 = image.replace(/^data:image\/\w+;base64,/, "");
 
       // Helper function for serial model calls with timeout and model fallback
       const safeCall = async (prompt: string, img?: string, json: boolean = true, highReasoning: boolean = false) => {
@@ -700,8 +699,7 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
         return res.status(400).json({ error: "Missing image data" });
       }
 
-      let optimizedBase64: string;
-      optimizedBase64 = image.replace(/^data:image\/\w+;base64,/, "");
+      const optimizedBase64 = image.replace(/^data:image\/\w+;base64,/, "");
 
       const prompt = "This is a small cropped section of a financial candlestick chart showing the rightmost portion (the most recent price movement). Based on where the price ended compared to where it started on the left edge of this image, did the price go UP or DOWN overall? Reply with only one word: UP or DOWN.";
       
@@ -789,81 +787,139 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
       if (!image || !debateData) return res.status(400).json({ error: "Missing inputs" });
       
       const prompt = `
-You are a forensic trading analyst. A binary options signal was given but the actual market moved in the OPPOSITE direction — this is a confirmed LOSS. Your job is to identify EXACTLY what caused this failure.
+You are the CONTRARIAN AUTOPSY JUDGE. A binary options signal was issued and the market 
+moved AGAINST it (confirmed LOSS). The original Judge agent already scored Bull vs Bear 
+using J1 (Argument Quality), J2 (Context Alignment), J4 (Boundary Reversal) and declared 
+a winner.
 
-You will receive:
-1. The original signal data (JSON below).
-2. A screenshot of the real chart showing what actually happened after the signal.
+YOUR ROLE IS NOT TO AGREE WITH THE LOSS. 
+YOUR ROLE IS TO BUILD THE STRONGEST POSSIBLE CASE THAT THE ORIGINAL JUDGE WAS WRONG — 
+even when the loss outcome seems to confirm the Judge was already wrong, you must still 
+argue contrarian to the Judge's REASONING (not the outcome). In other words:
 
-ANALYZE the result image carefully. Then cross-examine every layer of the signal pipeline.
+  • If the Judge said BULL won (CALL) and price went down -> argue that BEAR was actually 
+    the correct read AND that the Judge's J1/J2/J4 reasoning for picking BULL was flawed.
+  • If the Judge said BEAR won (PUT) and price went up -> argue that BULL was the correct 
+    read AND expose the flaws in the bearish reasoning.
+  • If the Judge said NO_TRADE but a directional move occurred -> argue which direction 
+    SHOULD have been called and why the Judge's caution was misplaced.
 
-YOUR TASK: Diagnose the failure across these 7 categories. For each, output a severity score (0 = not a factor, 1 = minor, 2 = moderate, 3 = critical) and a specific explanation.
+You are the loyal opposition. You are forbidden from agreeing with the original Judge's 
+ruling. You MUST attack it with specific evidence from the post-trade chart.
 
-CATEGORY 1 — VISION EXTRACTION ERROR
-Did the LLM misread the chart? Check if the extracted OHLC data or key levels look inconsistent with what you see in the result image. Signs: candle directions wrong, price levels implausible, key levels missing obvious support/resistance.
-Severity: 0-3. Explanation: [specific evidence]
+────────────────────────────────────────
+INPUTS YOU RECEIVE
+────────────────────────────────────────
+1. Original Judge verdict + Bull/Bear reasoning + Skeptic report (JSON below).
+2. The post-trade chart image showing what actually happened.
+3. The trade signal that was issued: ${tradeSignal}
 
-CATEGORY 2 — CEF / MATH ORACLE MISFIRE
-Was the Causal Entropic Force (CEF) direction wrong? Did the Hamiltonian Flow predict the wrong momentum? Was Wasserstein Distance misleadingly low? Was RQA Determinism high but the market broke structure anyway?
-Severity: 0-3. Explanation: [specific evidence]
+────────────────────────────────────────
+WHAT YOU MUST PRODUCE
+────────────────────────────────────────
+A counter-verdict mirroring the Judge's own scoring schema, but with the OPPOSITE winner.
 
-CATEGORY 3 — J4 BOUNDARY REVERSAL ERROR
-Was the J4 boundary score misleading? If J4 gave points to the wrong side based on price Y-position, and the price actually reversed in that direction, J4 was working against the signal.
-Severity: 0-3. Explanation: [specific evidence]
+For each of the 7 forensic categories below, you must phrase the explanation as a 
+DIRECT REBUTTAL to the original Judge's logic. Severity = how badly the Judge was wrong 
+on that axis (0 = Judge was fine here, 3 = Judge was catastrophically wrong here).
 
-CATEGORY 4 — JUDGE SCORING BIAS (J1/J2)
-Did the Judge over-score J1 or J2 for the winning side? Were the argument quality or context alignment scores inflated despite the bear/bull case being weak? Did the Arbitrator have to correct the LLM (indicating score inconsistency)?
-Severity: 0-3. Explanation: [specific evidence]
+CATEGORY 1 — VISION EXTRACTION (rebut what the Judge "saw")
+Argue that the Judge mis-read specific candles/levels. Cite exact wick ratios, 
+candle positions, and what the chart ACTUALLY shows now in hindsight.
 
-CATEGORY 5 — AGENT ARGUMENT WEAKNESS
-Did the winning agent (Bull or Bear) use generic reasoning? Did it fail to cite specific candle evidence? Did the Skeptic assign a low riskProbability when the real risk was clearly there? Did both agents use overlapping techniques (lazy analysis)?
-Severity: 0-3. Explanation: [specific evidence]
+CATEGORY 2 — CEF / MATH ORACLE MISFIRE (rebut the math priors)
+Argue that the Hamiltonian Flow / Wasserstein / RQA values supported the OPPOSITE 
+direction and the Judge ignored or misweighted them.
 
-CATEGORY 6 — MARKET CONDITION MISMATCH
-Was the market actually FLAT/CHOPPY and a NO_TRADE should have been called? Did the judge report market as CLEAN when volatility was low? Was confidence just barely above 70% (borderline trade that shouldn't have been taken)?
-Severity: 0-3. Explanation: [specific evidence]
+CATEGORY 3 — J4 BOUNDARY REVERSAL (rebut J4 points)
+Argue that the J4 boundary points were assigned to the wrong side, OR that the 
+Y-coordinate logic was inverted given how price actually behaved.
 
-CATEGORY 7 — LATENCY / TIMING MISMATCH
-Did the 90-second latency-adjusted forecast correctly identify direction but the actual result window was different? Was the entry timing (NOW vs WAIT) wrong relative to what the real chart shows?
-Severity: 0-3. Explanation: [specific evidence]
+CATEGORY 4 — JUDGE SCORING BIAS on J1/J2 (the core attack)
+This is your strongest weapon. Argue that the J1 (Argument Quality) and J2 
+(Context Alignment) points awarded to the original winner should have gone to 
+the LOSING side. Reassign points: "J1 should have been Bull 3.5 / Bear 1.5 instead 
+of Bull 1.0 / Bear 3.0".
 
----
+CATEGORY 5 — AGENT ARGUMENT WEAKNESS (rebut the winning agent)
+Argue that the winning agent's reasoning was generic, lazy, or template-like, 
+and that the LOSING agent actually cited stronger candle-specific evidence.
 
-PRIMARY ROOT CAUSE: Identify the 1–2 categories with the highest severity as the PRIMARY cause of this loss.
+CATEGORY 6 — MARKET CONDITION MISREAD
+Argue that the market was actually the opposite regime than what was reported 
+(if Judge said CLEAN, argue CHOPPY/FLAT or vice versa) and how this flipped the call.
 
-SYSTEM RECOMMENDATION: Based on the primary cause, give ONE specific, actionable recommendation for improving the pipeline. Be concrete — name the exact function, prompt section, or agent that needs to change.
+CATEGORY 7 — LATENCY / TIMING REBUTTAL
+Argue that the 90-second projected forecast was directionally inverted relative 
+to what would have been correct.
 
-OUTPUT FORMAT — Respond ONLY with this JSON, no preamble:
+────────────────────────────────────────
+CONTRARIAN VERDICT (MANDATORY)
+────────────────────────────────────────
+You must produce a counterVerdict object that flips the Judge's call:
+
+  • If Judge said CALL  -> contrarianSignal = "PUT"
+  • If Judge said PUT   -> contrarianSignal = "CALL"
+  • If Judge said NO TRADE -> contrarianSignal = whichever direction the post-trade 
+    chart shows was actually correct ("CALL" or "PUT").
+
+You must also re-score the Bull and Bear cases with INVERTED bias. The contrarian total 
+for the side the Judge dismissed must be HIGHER than the side the Judge picked.
+
+────────────────────────────────────────
+OUTPUT — STRICT JSON ONLY, NO PREAMBLE
+────────────────────────────────────────
 {
   "tradeSignal": "${tradeSignal}",
   "actualOutcome": "Brief description of what price actually did",
-  "categories": {
-    "visionExtraction": { "severity": 0, "label": "Vision Extraction", "explanation": "..." },
-    "mathOracleMisfire": { "severity": 0, "label": "Math Oracle Misfire", "explanation": "..." },
-    "j4BoundaryError": { "severity": 0, "label": "J4 Boundary Error", "explanation": "..." },
-    "judgeScoringBias": { "severity": 0, "label": "Judge Scoring Bias", "explanation": "..." },
-    "agentArgumentWeakness": { "severity": 0, "label": "Agent Argument Weakness", "explanation": "..." },
-    "marketConditionMismatch": { "severity": 0, "label": "Market Condition Mismatch", "explanation": "..." },
-    "latencyTimingMismatch": { "severity": 0, "label": "Latency Timing Mismatch", "explanation": "..." }
+
+  "contrarianSignal": "CALL" | "PUT",
+  "contrarianConfidence": number (0-100),
+  "contrarianRuling": "2-4 sentence rebuttal of the original Judge's verdict, citing the strongest counter-evidence from the post-trade chart",
+
+  "rebutScores": {
+    "originalJudge":   { "j1": number, "j2": number, "j4": number, "total": number, "winner": "BULL" | "BEAR" | "NO_TRADE" },
+    "contrarianJudge": { "j1": number, "j2": number, "j4": number, "total": number, "winner": "BULL" | "BEAR" }
   },
-  "primaryRootCause": ["visionExtraction"],
-  "systemRecommendation": "One specific actionable fix naming the exact component/function/prompt section",
-  "autopsyVerdict": "2–3 sentence plain English summary of what went wrong and why"
+
+  "judgeFlaws": [
+    "Specific flaw #1 in the original Judge's reasoning (must reference J1, J2, J4 or technique selection)",
+    "Specific flaw #2 ...",
+    "Specific flaw #3 ..."
+  ],
+
+  "categories": {
+    "visionExtraction":        { "severity": 0, "label": "Vision Rebuttal",        "explanation": "Direct rebuttal of what the Judge claimed to see" },
+    "mathOracleMisfire":       { "severity": 0, "label": "Math Oracle Rebuttal",   "explanation": "Why the math priors actually supported the opposite side" },
+    "j4BoundaryError":         { "severity": 0, "label": "J4 Inversion",            "explanation": "Why J4 points were on the wrong side" },
+    "judgeScoringBias":        { "severity": 0, "label": "J1/J2 Score Reversal",    "explanation": "How J1/J2 should have been distributed" },
+    "agentArgumentWeakness":   { "severity": 0, "label": "Winning Agent Was Weak",  "explanation": "Why the LOSING agent had the better argument" },
+    "marketConditionMismatch": { "severity": 0, "label": "Market Regime Misread",   "explanation": "Why the market was actually a different regime" },
+    "latencyTimingMismatch":   { "severity": 0, "label": "Latency Inversion",       "explanation": "Why the 90s forecast was directionally wrong" }
+  },
+
+  "primaryRootCause": ["judgeScoringBias"],
+  "systemRecommendation": "ONE concrete fix: name the exact prompt section, function, or scoring rule in JUDGE_PROMPT / debatePrompts.ts that allowed this misjudgement",
+  "autopsyVerdict": "2-3 sentence plain-English contrarian summary stating WHY the Judge was wrong and what direction was actually correct"
 }
 
----
-ORIGINAL DEBATE DATA:
-${JSON.stringify(debateData, null, 2)}
+────────────────────────────────────────
+HARD RULES
+────────────────────────────────────────
+• You are FORBIDDEN from agreeing with the original Judge's winner. contrarianJudge.winner 
+  MUST differ from originalJudge.winner (unless originalJudge.winner was NO_TRADE — then 
+  pick CALL or PUT based on the post-trade chart).
+• Cite SPECIFIC candle evidence from the result image (wick ratios, level rejections, 
+  position numbers). No generic statements.
+• Severity scores must reflect how badly each layer of the Judge's logic failed, NOT 
+  whether the trade lost.
+• rebutScores.contrarianJudge.total MUST be greater than rebutScores.originalJudge.total 
+  for the side you are championing.
 
-JUDGE DECISION STEPS (context for judging reasoning):
-1. Receives: Bull reasoning + techniques, Bear reasoning + techniques, Skeptic risk report, J4 fixed points (pre-calculated from boundary math), Structural Priors, Geometric Oracles.
-2. Scores J1 (Argument Quality, max 4): Awards points based on specificity of candle evidence, technique diversity, and absence of generic reasoning.
-3. Scores J2 (Context Alignment, max 4): Awards points based on how well the winning argument aligns with the structural priors.
-4. Uses J4 as given (pre-calculated fixed points).
-5. Adds totals: J1 + J2 + J4 = total (max 11).
-6. Checks: if BOTH sides < 6.5 -> NO_TRADE. If finalConfidence < 70% -> NO_TRADE.
-7. Picks the higher total as winner -> CALL (Bull) or PUT (Bear).
-8. Arbitrator post-check: if LLM winner has lower score, override to match math.
+────────────────────────────────────────
+ORIGINAL DEBATE DATA (the thing you are arguing AGAINST):
+────────────────────────────────────────
+${JSON.stringify(debateData, null, 2)}
 `;
 
       const rawResponse = await callModel({

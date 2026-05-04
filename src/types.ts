@@ -1,3 +1,26 @@
+export interface AutopsyCategory {
+  severity: 0 | 1 | 2 | 3;
+  label: string;
+  explanation: string;
+}
+
+export interface AutopsyResult {
+  tradeSignal: 'CALL' | 'PUT' | 'NO TRADE';
+  actualOutcome: string;
+  contrarianSignal: 'CALL' | 'PUT';
+  contrarianConfidence: number;
+  contrarianRuling: string;
+  rebutScores: {
+    originalJudge:   { j1: number; j2: number; j4: number; total: number; winner: 'BULL'|'BEAR'|'NO_TRADE' };
+    contrarianJudge: { j1: number; j2: number; j4: number; total: number; winner: 'BULL'|'BEAR' };
+  };
+  judgeFlaws: string[];
+  categories: Record<string, AutopsyCategory>;
+  primaryRootCause: string[];
+  systemRecommendation: string;
+  autopsyVerdict: string;
+}
+
 export interface OHLCV {
   open: number;
   high: number;
