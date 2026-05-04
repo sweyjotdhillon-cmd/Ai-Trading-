@@ -133,16 +133,6 @@ service cloud.firestore {
              (!('lz:commonMistakes' in data) || data['lz:commonMistakes'] is string);
     }
 
-    function isValidSetupStats(data) {
-      return hasOnlyAllowedFields(data, ['setupName', 'totalTrades', 'wins', 'losses', 'winRate', 'avgProbability']) &&
-             (!('setupName' in data) || data.setupName is string) &&
-             (!('totalTrades' in data) || data.totalTrades is number) &&
-             (!('wins' in data) || data.wins is number) &&
-             (!('losses' in data) || data.losses is number) &&
-             (!('winRate' in data) || data.winRate is number) &&
-             (!('avgProbability' in data) || data.avgProbability is number);
-    }
-
     function isValidSubUser(data) {
       return hasOnlyAllowedFields(data, ['masterUid', 'name', 'passwordPin', 'createdAt', 'id', 'updatedAt', 'timestamp']) &&
              (!('masterUid' in data) || data.masterUid == null || (data.masterUid is string && (data.masterUid == request.auth.uid || isAdmin()))) &&
@@ -188,7 +178,7 @@ service cloud.firestore {
       }
       match /stats/{document=**} {
         allow read: if isOwner(userId) || isAdmin();
-        allow write: if (isOwner(userId) && (isValidBehaviorProfile(request.resource.data) || isValidSetupStats(request.resource.data))) || isAdmin();
+        allow write: if (isOwner(userId) && isValidBehaviorProfile(request.resource.data)) || isAdmin();
       }
     }
 

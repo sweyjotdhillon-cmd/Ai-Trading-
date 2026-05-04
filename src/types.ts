@@ -94,15 +94,6 @@ export interface StructuredInsight {
   qualityScore: number;
 }
 
-export interface SetupStats {
-  setupName: string;
-  totalTrades: number;
-  wins: number;
-  losses: number;
-  winRate: number;
-  avgProbability: number;
-}
-
 export interface BehaviorProfile {
   currentStreak: number;
   maxStreak: number;

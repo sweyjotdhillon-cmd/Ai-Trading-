@@ -394,7 +394,7 @@ async function startServer() {
   app.post("/api/debate", async (req, res) => {
     const bodySize = JSON.stringify(req.body).length;
     console.log(`[API] Received debate request at ${new Date().toISOString()} - Approx Size: ${(bodySize / 1024 / 1024).toFixed(2)}MB`);
-    const { image, symbol, timeframe, investment, structuralPriors, geometricOracles, techniqueData, statsData, encryptedSystemTokens } = req.body;
+    const { image, symbol, timeframe, investment, structuralPriors, geometricOracles, techniqueData, encryptedSystemTokens } = req.body;
     const tokenManager = new TokenManager(encryptedSystemTokens);
     
     if (!image) {
@@ -413,7 +413,6 @@ async function startServer() {
     const techContext = techniqueData && Array.isArray(techniqueData) 
       ? `\nTECHNIQUES AVAILABLE:\n${techniqueData.map((t) => `- ${t}`).join('\n')}`
       : (techniqueData ? `\nTECHNIQUES AVAILABLE:\n${JSON.stringify(techniqueData, null, 2)}` : "None specific provided.");
-    const statsContext = statsData ? `\nPREVIOUS TRADING STATS FOR CONTINUITY:\n${JSON.stringify(statsData, null, 2)}` : "";
 
     try {
       const optimizedBase64 = image.replace(/^data:image\/\w+;base64,/, "");
@@ -641,7 +640,7 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
         .replace('{{STAT_SCORES}}', statScoresContext)
         .replace('{{GEOMETRIC_ORACLES}}', visionGeometricOracles) + 
         `\n\nAGENT BULL ARGUMENT: ${bull.reasoning}\nBULL TECHNIQUES: ${bull.techniquesApplied?.join(', ') || 'None provided'}\n\nAGENT BEAR ARGUMENT: ${bear.reasoning}\nBEAR TECHNIQUES: ${bear.techniquesApplied?.join(', ') || 'None provided'}\n\nRISK ANALYST REPORT: ${skeptic.riskVerdict} (${skeptic.riskProbability}%)\n` + 
-        dataContext + statsContext;
+        dataContext;
 
       const judgeRaw = await safeCall(judgePrompt, undefined, true, true);
       const judge = parseResponse(judgeRaw);
@@ -701,18 +700,36 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
 
       const optimizedBase64 = image.replace(/^data:image\/\w+;base64,/, "");
 
-      const prompt = "This is a small cropped section of a financial candlestick chart showing the rightmost portion (the most recent price movement). Based on where the price ended compared to where it started on the left edge of this image, did the price go UP or DOWN overall? Reply with only one word: UP or DOWN.";
+      const prompt = `This is a small cropped section of a financial candlestick chart showing the rightmost portion (the most recent price movement). 
+Based on where the price ended compared to where it started on the left edge of this image, did the price go UP or DOWN overall? 
+Also provide your confidence (0-100).
+Respond ONLY in JSON with this exact schema:
+{
+  "outcome": "UP" | "DOWN" | "FLAT",
+  "confidence": number
+}`;
       
       const response = await callModel({
           model: "gpt-4o-mini",
           prompt,
           image: optimizedBase64,
-          jsonMode: false,
+          jsonMode: true,
           tokenManager
       });
 
-      const upOrDown = response?.toUpperCase().includes('UP') ? 'UP' : 'DOWN';
-      res.json({ outcome: upOrDown });
+      let parsed;
+      try {
+        const cleanRaw = response.replace(/```json|```/g, '').trim();
+        parsed = JSON.parse(cleanRaw);
+      } catch {
+        parsed = { outcome: 'FLAT', confidence: 0 };
+      }
+
+      if (parsed.confidence < 60 || parsed.outcome === 'FLAT') {
+         res.json({ outcome: 'INCONCLUSIVE' });
+      } else {
+         res.json({ outcome: parsed.outcome });
+      }
     } catch (error: any) {
       console.error("Read outcome error:", error);
       res.status(500).json({ error: error.message || "Read outcome failed" });

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Modal, ActivityIndicator, Platform } from 'react-native';
 import { X, Upload, Activity, AlertTriangle, CheckCircle, Search } from 'lucide-react';
 import tw from 'twrnc';
@@ -10,6 +10,7 @@ interface Props {
   analysisData: any; // Original JSON
   tradeSignal: string; // CALL or PUT
   encryptedSystemTokens?: string; // For backend auth
+  prefilledResultImage?: string;
 }
 
 const listContainerVariants = {
@@ -27,13 +28,19 @@ const listItemVariants = {
   show: { opacity: 1, y: 0 }
 };
 
-export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, encryptedSystemTokens }: Props) {
-  const [resultImage, setResultImage] = useState<string | null>(null);
+export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, encryptedSystemTokens, prefilledResultImage }: Props) {
+  const [resultImage, setResultImage] = useState<string | null>(prefilledResultImage || null);
   const [loading, setLoading] = useState(false);
   const [autopsyResult, setAutopsyResult] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLogged, setIsLogged] = useState(false);
   
+  useEffect(() => {
+    if (prefilledResultImage) {
+      setResultImage(prefilledResultImage);
+    }
+  }, [prefilledResultImage]);
+
   const fileInputRef = useRef<any>(null);
   const prefersReducedMotion = useReducedMotion();
   const springProps = { type: "spring", stiffness: 400, damping: 22 };

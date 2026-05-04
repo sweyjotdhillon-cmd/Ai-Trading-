@@ -17,10 +17,8 @@ import {
   Upload, 
   Sparkles, 
   Brain,
-  TrendingUp,
   AlertTriangle,
   FileText,
-  Download,
   Terminal,
   Activity,
   XCircle,
@@ -32,6 +30,7 @@ import tw from 'twrnc';
 import { db } from '../firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { LossAutopsyModal } from './LossAutopsyModal';
+import { parseTimeframeToMinutes, detectCandleCount, cropRightCandles } from '../utils/imageUtils';
 
 const JUDGE_TASKS = {
   judge1: ["Scanning support nodes...", "Evaluating volume nodes...", "Mapping price patterns...", "Analyzing breakouts...", "Finalizing Bullish Case..."],
@@ -128,21 +127,18 @@ export function LiveAnalysis() {
   const [investmentAmount, setInvestmentAmount] = useState('100');
   const [investmentDuration, setInvestmentDuration] = useState('5m');
   const [profitabilityPercent, setProfitabilityPercent] = useState('85');
+  const [candlesInView, setCandlesInView] = useState('60');
 
-  // Technique / Stats Files
+  // Technique Files
   const [techniquesList, setTechniquesList] = useState<string[]>([]);
-  const [statsData, setStatsData] = useState<any[]>([]);
-  const [sessionIndex, setSessionIndex] = useState(1);
   const [techFileName, setTechFileName] = useState<string | null>(null);
-  const [statsFileName, setStatsFileName] = useState<string | null>(null);
 
-  const [isStatsSaved, setIsStatsSaved] = useState(false);
   const [confirmedOutcome, setConfirmedOutcome] = useState<'WIN' | 'LOSS' | null>(null);
   const [showAutopsyModal, setShowAutopsyModal] = useState(false);
+  const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(null);
 
   const fileInputRef = useRef<any>(null);
   const techInputRef = useRef<any>(null);
-  const statsInputRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   const prefersReducedMotion = useReducedMotion();
@@ -176,7 +172,6 @@ export function LiveAnalysis() {
     setSelectedImage(null);
     setTradingPhase('IDLE');
     setTradingDirection(null);
-    setIsStatsSaved(false);
     setConfirmedOutcome(null);
     setShowAutopsyModal(false);
     setMode('camera');
@@ -372,12 +367,6 @@ export function LiveAnalysis() {
     }
   };
 
-  const handlePickStatsFile = () => {
-    if (Platform.OS === 'web') {
-      statsInputRef.current?.click();
-    }
-  };
-
   const onFileChange = (e: any) => {
     const file = e.target.files[0];
     if (file) {
@@ -412,114 +401,6 @@ export function LiveAnalysis() {
       };
       reader.readAsText(file);
     }
-  };
-
-  const onStatsFileChange = (e: any) => {
-    const file = e.target.files[0];
-    if (file) {
-      setStatsFileName(file.name);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const json = JSON.parse(event.target?.result as string);
-          const list = Array.isArray(json) ? json : (json.stats || []);
-          setStatsData(list);
-          
-          // Detect latest session index
-          const maxIdx = list.reduce((max: number, item: any) => Math.max(max, item.sessionIndex || 0), 0);
-          setSessionIndex(maxIdx + 1);
-          
-          setTimeout(() => {
-            alert(`Successfully loaded ${list.length} records from ${file.name}. This is analysis session #${maxIdx + 1}.`);
-          }, 300);
-        } catch (err) {
-          console.error("Failed to parse stats file:", err);
-          setTimeout(() => {
-            alert("Invalid stats file format. Please upload a JSON file containing previous results.");
-          }, 300);
-        }
-      };
-      reader.readAsText(file);
-    }
-  };
-
-  const saveToStats = (analysisData: any, outcome: 'WIN' | 'LOSS') => {
-    try {
-      const entryIdx = statsData.length + 1;
-      const profitPct = Number(profitabilityPercent);
-      const investAmt = Number(investmentAmount);
-      const potentialProfit = (profitPct / 100) * investAmt;
-      
-      const now = new Date();
-      const dateStr = now.toLocaleDateString();
-      const timeStr = now.toLocaleTimeString();
-
-      const newEntry = {
-        id: entryIdx,
-        sessionName: `${stockName.replace('/', '_')}_${entryIdx}`,
-        sessionIndex: sessionIndex,
-        timestamp: now.toISOString(),
-        date: dateStr,
-        time: timeStr,
-        stock: stockName,
-        timeframe: graphTimeframe,
-        duration: investmentDuration,
-        investment: investAmt,
-        profitPercentage: profitPct,
-        profitPotential: potentialProfit,
-        lossPotential: investAmt,
-        signal: analysisData.judge.winner === 'BULL' ? 'CALL' : (analysisData.judge.winner === 'BEAR' ? 'PUT' : 'WAIT'),
-        result: outcome,
-        exactProfit: outcome === 'WIN' ? potentialProfit : -investAmt,
-        profitAmount: outcome === 'WIN' ? potentialProfit : -investAmt,
-        reasoning: analysisData.judge.ruling,
-        confidence: analysisData.judge.finalConfidence,
-        totalScore: analysisData.judge.totalScore,
-        decision: analysisData.judge.decision,
-        techniquesApplied: techniquesList
-      };
-      
-      const updatedStats = [...statsData, newEntry];
-      setStatsData(updatedStats);
-      setIsStatsSaved(true);
-      setConfirmedOutcome(outcome);
-
-      // Also persist to current session storage for the local view
-      const existing = sessionStorage.getItem('stats_surface_data');
-      let localStats = { stats: [] };
-      if (existing) {
-        localStats = JSON.parse(existing);
-      }
-      localStats.stats.push(newEntry as never);
-      sessionStorage.setItem('stats_surface_data', JSON.stringify(localStats));
-      
-      setTimeout(() => {
-        alert(`Trade result recorded as ${outcome}. Stat entry #${entryIdx} created.`);
-      }, 300);
-    } catch (err) {
-      console.error("Failed to save stats:", err);
-      setTimeout(() => {
-        alert("Error saving trade result.");
-      }, 300);
-    }
-  };
-
-  const handleDownloadStats = () => {
-    if (statsData.length === 0) return;
-    
-    const fileName = `${stockName.replace('/', '_')}_${sessionIndex}.json`;
-    const blob = new Blob([JSON.stringify(statsData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    link.click();
-    URL.revokeObjectURL(url);
-    
-    setSessionIndex(prev => prev + 1);
-    setTimeout(() => {
-      alert(`File ${fileName} downloaded. Upload it for your next analysis session to continue the series!`);
-    }, 300);
   };
 
   const handleAnalyze = async () => {
@@ -598,39 +479,31 @@ export function LiveAnalysis() {
         let autoOutcomePromise: Promise<any> | null = null;
 
         if (mode === 'test' && Platform.OS === 'web' && optimizedImageForCrop) {
-           const parseDuration = parseInt(investmentDuration);
-           const parseTimeframe = parseInt(graphTimeframe);
-           if (!isNaN(parseDuration) && !isNaN(parseTimeframe) && parseTimeframe > 0) {
-              const cropRatio = Math.min(0.5, parseDuration / parseTimeframe);
+           const parseDuration = parseTimeframeToMinutes(investmentDuration);
+           if (!isNaN(parseDuration)) {
+              const estimatedCandles = detectCandleCount(null, parseInt(candlesInView) || 60);
+              console.debug(`[TEST_MODE] rawDuration=${investmentDuration}, parseDuration=${parseDuration}m, detectedCandles=${estimatedCandles}, timeframe=${parseTimeframeToMinutes(graphTimeframe)}m`);
               
-              const img = new window.Image();
-              await new Promise((resolve) => {
-                 img.onload = resolve;
-                 img.onerror = resolve;
-                 img.src = optimizedImageForCrop;
-              });
-              
-              const leftCanvas = document.createElement('canvas');
-              const rightCanvas = document.createElement('canvas');
-              const leftW = Math.max(1, img.width * (1 - cropRatio));
-              const rightW = Math.max(1, img.width * cropRatio);
-              
-              leftCanvas.width = leftW;
-              leftCanvas.height = img.height;
-              leftCanvas.getContext('2d')?.drawImage(img, 0, 0, leftW, img.height, 0, 0, leftW, img.height);
-              
-              rightCanvas.width = rightW;
-              rightCanvas.height = img.height;
-              rightCanvas.getContext('2d')?.drawImage(img, leftW, 0, rightW, img.height, 0, 0, rightW, img.height);
-              
-              finalImageForAnalysis = leftCanvas.toDataURL('image/jpeg', 0.88);
-              rightSliceBase64 = rightCanvas.toDataURL('image/jpeg', 0.88);
-
-              autoOutcomePromise = fetchWithRetry('/api/read-outcome', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: rightSliceBase64, encryptedSystemTokens })
-              }).then(r => r.json());
+              try {
+                const { leftSliceBase64, rightSliceBase64: rightSlice, cropRatio } = await cropRightCandles(
+                  optimizedImageForCrop,
+                  parseDuration,
+                  estimatedCandles
+                );
+                
+                console.debug(`[TEST_MODE] cropRatio=${cropRatio.toFixed(3)}`);
+                finalImageForAnalysis = leftSliceBase64;
+                rightSliceBase64 = rightSlice;
+                setTestModeRightSlice(rightSlice);
+                
+                autoOutcomePromise = fetchWithRetry('/api/read-outcome', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ image: rightSliceBase64, encryptedSystemTokens })
+                }).then(r => r.json());
+              } catch (err) {
+                 console.error("[TEST_MODE] fail during crop:", err);
+              }
            }
         }
 
@@ -660,7 +533,6 @@ export function LiveAnalysis() {
           structuralPriors: `Macro context for ${stockName} on ${graphTimeframe} timeframe.`,
           geometricOracles: "Standard geometric extraction.",
           techniqueData: techniquesList,
-          statsData: statsData.slice(-3),
           encryptedSystemTokens
         }),
         signal: controller.signal
@@ -787,23 +659,32 @@ export function LiveAnalysis() {
              
              if (mode === 'test' && autoOutcomeResult) {
                 const autoOutcomeDirection = autoOutcomeResult.outcome;
-                const isWin = (direction === 'UP' && autoOutcomeDirection === 'UP') || (direction === 'DOWN' && autoOutcomeDirection === 'DOWN');
-                setTimeout(() => {
-                   saveToStats(data, isWin ? 'WIN' : 'LOSS');
-                   alert(`Auto-Test Complete!\nAI Signal: ${direction}\nActual Outcome: ${autoOutcomeDirection}\nResult: ${isWin ? 'WIN' : 'LOSS'}`);
-                }, 1000);
+                if (autoOutcomeDirection === 'INCONCLUSIVE') {
+                    // Do not auto-grade, allow the user to select
+                    setTimeout(() => {
+                       // Replace with custom UI or alert
+                       setAnalysisError("Auto-verify uncertain — please grade manually.");
+                    }, 500);
+                } else {
+                    const isWin = (direction === 'UP' && autoOutcomeDirection === 'UP') || (direction === 'DOWN' && autoOutcomeDirection === 'DOWN');
+                    setTimeout(() => {
+                        setConfirmedOutcome(isWin ? 'WIN' : 'LOSS');
+                        setAnalysisError(`Auto-Test Complete! AI Signal: ${direction} | Actual: ${autoOutcomeDirection} | Result: ${isWin ? 'WIN' : 'LOSS'}`);
+                    }, 1000);
+                }
              }
           }
         }
         
         setAnalysis(data);
-        setIsStatsSaved(false); // Reset stats saved state for new analysis
         
         // Return phase back to idle after display, but keep scout running until reset 
         setTimeout(() => {
            setTradingPhase('IDLE');
            setAnalysisStep('LIVE TICK SCOUT ACTIVE');
-           setTradingDirection(null);
+           if (mode !== 'test') { // Guard against clobbering in test mode
+             setTradingDirection(null);
+           }
         }, 6000);
 
       } else {
@@ -832,7 +713,7 @@ export function LiveAnalysis() {
 
 
   return (
-    <View style={[tw`flex-1 bg-black relative`, { height: '100%' }]}>
+    <View style={tw`flex-1 bg-black relative`}>
       {/* Full Screen High-Intensity Overlays */}
       <LossAutopsyModal
         isOpen={showAutopsyModal}
@@ -840,6 +721,7 @@ export function LiveAnalysis() {
         analysisData={analysis}
         tradeSignal={analysis?.judge?.winner === 'BULL' ? 'CALL' : (analysis?.judge?.winner === 'BEAR' ? 'PUT' : 'WAIT')}
         encryptedSystemTokens={encryptedSystemTokens}
+        prefilledResultImage={testModeRightSlice || undefined}
       />
       <Modal
         visible={tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection}
@@ -911,7 +793,6 @@ export function LiveAnalysis() {
           <>
             <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept="image/*" onChange={onFileChange} />
             <input type="file" ref={techInputRef} style={{ display: 'none' }} accept=".json" onChange={onTechniqueChange} />
-            <input type="file" ref={statsInputRef} style={{ display: 'none' }} accept=".json" onChange={onStatsFileChange} />
           </>
         )}
       
@@ -931,14 +812,6 @@ export function LiveAnalysis() {
                 <FileText size={16} color={techFileName ? "#1A1308" : "#8B95B0"} />
               </motion.div>
             </Pressable>
-            <Pressable 
-              onPress={handlePickStatsFile}
-              style={({ pressed }) => [tw`w-9 h-9 rounded-lg items-center justify-center`, statsFileName ? tw`bg-[#D9B382]` : tw`bg-white/5 border border-white/10`, { opacity: pressed ? 0.7 : 1 }]}
-            >
-              <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
-                <TrendingUp size={16} color={statsFileName ? "#1A1308" : "#8B95B0"} />
-              </motion.div>
-            </Pressable>
           </View>
         </View>
 
@@ -948,13 +821,13 @@ export function LiveAnalysis() {
               <View style={tw`flex-row justify-between items-center mb-2`}>
                 <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Asset Selection</Text>
               </View>
-              <View style={tw`flex-row gap-1.5`}>
+              <View style={tw`flex-row flex-wrap gap-1.5`}>
                 {symbols.map((s) => (
                   <Pressable
                     key={s.name}
                     onPress={() => setStockName(s.name)}
                     style={({ pressed }) => [
-                      tw`flex-1 py-2.5 rounded-lg border items-center flex-row justify-center`,
+                      tw`flex-1 min-w-[30%] py-2.5 rounded-lg border items-center flex-row justify-center`,
                       stockName === s.name ? tw`bg-[#D9B382] border-[#D9B382]` : tw`bg-black/20 border-white/5`,
                       { opacity: pressed ? 0.7 : 1 }
                     ]}
@@ -968,8 +841,8 @@ export function LiveAnalysis() {
               </View>
            </View>
 
-           <View style={tw`flex-row gap-3 mb-4 z-50`}>
-              <View style={tw`flex-1`}>
+           <View style={tw`flex-row flex-wrap gap-3 mb-4 z-50`}>
+              <View style={tw`flex-1 min-w-[45%]`}>
                  <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-wider mb-1.5`}>Graph TF</Text>
                  <View style={tw`relative`}>
                       <Pressable 
@@ -994,7 +867,7 @@ export function LiveAnalysis() {
                     )}
                  </View>
               </View>
-              <View style={tw`flex-1`}>
+              <View style={tw`flex-1 min-w-[45%]`}>
                  <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-wider mb-1.5`}>Duration</Text>
                  <View style={tw`relative`}>
                     <Pressable 
@@ -1021,34 +894,47 @@ export function LiveAnalysis() {
               </View>
            </View>
 
-           <View style={tw`flex-row gap-3`}>
-              <View style={tw`flex-1`}>
+           <View style={tw`flex-row flex-wrap gap-3`}>
+              <View style={tw`flex-1 min-w-[45%]`}>
                  <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-wider mb-1.5`}>Capital</Text>
                  <TextInput
-                   style={tw`bg-black/60 border border-white/10 h-10 rounded-lg px-3 text-white font-black text-xs`}
+                   style={tw`bg-black/60 border border-white/10 h-10 rounded-lg px-3 text-white font-black text-xs w-full`}
                    value={investmentAmount}
                    onChangeText={setInvestmentAmount}
                    keyboardType="numeric"
                    placeholderTextColor="#4B5570"
                  />
               </View>
-              <View style={tw`flex-1`}>
+              <View style={tw`flex-1 min-w-[45%]`}>
                  <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-wider mb-1.5`}>Payout (%)</Text>
                  <TextInput
-                   style={tw`bg-black/60 border border-white/10 h-10 rounded-lg px-3 text-[#22C55E] font-black text-xs`}
+                   style={tw`bg-black/60 border border-white/10 h-10 rounded-lg px-3 text-[#22C55E] font-black text-xs w-full`}
                    value={profitabilityPercent}
                    onChangeText={setProfitabilityPercent}
                    keyboardType="numeric"
                  />
               </View>
+              {mode === 'test' && (
+                <View style={tw`flex-1 min-w-[45%]`}>
+                   <Text style={tw`text-[8px] font-black text-[#D9B382] uppercase tracking-wider mb-1.5`}>Candles View</Text>
+                   <TextInput
+                     style={tw`bg-black/60 border border-[#D9B382]/30 h-10 rounded-lg px-3 text-[#D9B382] font-black text-xs w-full`}
+                     value={candlesInView}
+                     onChangeText={setCandlesInView}
+                     keyboardType="numeric"
+                     placeholder="60"
+                     placeholderTextColor="#D9B382"
+                   />
+                </View>
+              )}
            </View>
         </motion.div>
 
         {/* Dense Evidence Row */}
         <View style={tw`bg-[#121419] rounded-2xl border border-white/10 p-4 mb-4`}>
-            <View style={tw`flex-row justify-between items-center mb-3`}>
+            <View style={tw`flex-row flex-wrap justify-between items-center gap-2 mb-3`}>
                <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Chart Feed</Text>
-               <View style={tw`flex-row bg-black/40 rounded-lg p-0.5 border border-white/5`}>
+               <View style={tw`flex-row flex-wrap bg-black/40 rounded-lg p-0.5 border border-white/5`}>
                   {(['camera', 'upload', 'test'] as const).map((m) => (
                     <Pressable
                       key={m}
@@ -1289,7 +1175,7 @@ export function LiveAnalysis() {
 
             {/* Dynamic Comparison Scorecards - Tactical Readouts */}
             {analysis.judge.cases ? (
-              <div className="flex flex-row gap-3 mb-6">
+              <div className="flex flex-row flex-wrap gap-3 mb-6">
                 {['bull', 'bear'].map((side, idx) => {
                   const data = analysis.judge.cases[side];
                   const isWinner = side.toUpperCase() === analysis.judge.winner.toUpperCase();
@@ -1301,7 +1187,7 @@ export function LiveAnalysis() {
                       initial={{ opacity: 0, x: side === 'bull' ? -20 : 20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 0.4 + (idx * 0.1) }}
-                      className={`flex-1 bg-black/40 rounded-2xl p-4 border relative overflow-hidden ${isWinner ? (side === 'bull' ? 'border-green-500/40' : 'border-red-500/40') : 'border-white/5'}`}
+                      className={`flex-1 min-w-[200px] bg-black/40 rounded-2xl p-4 border relative overflow-hidden ${isWinner ? (side === 'bull' ? 'border-green-500/40' : 'border-red-500/40') : 'border-white/5'}`}
                     >
                       {isWinner && (
                         <div className="absolute top-0 right-0 p-1">
@@ -1426,8 +1312,8 @@ export function LiveAnalysis() {
               </View>
             )}
 
-            <View style={tw`flex-row gap-4 mb-8`}>
-              <View style={tw`flex-1 p-3 bg-black/20 rounded-xl border border-white/5`}>
+            <View style={tw`flex-row flex-wrap gap-4 mb-8`}>
+              <View style={tw`flex-1 min-w-[120px] p-3 bg-black/20 rounded-xl border border-white/5`}>
                 <Text style={tw`text-[8px] font-black text-[#8B95B0] uppercase mb-1`}>Confidence</Text>
                 <Text style={tw`text-white font-black text-lg`}>
                   <motion.span key={analysis.judge.finalConfidence} initial={{ y: prefersReducedMotion ? 0 : -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}>
@@ -1435,7 +1321,7 @@ export function LiveAnalysis() {
                   </motion.span>
                 </Text>
               </View>
-              <View style={tw`flex-1 p-3 bg-black/20 rounded-xl border border-white/5`}>
+              <View style={tw`flex-1 min-w-[120px] p-3 bg-black/20 rounded-xl border border-white/5`}>
                 <Text style={tw`text-[8px] font-black text-[#8B95B0] uppercase mb-1`}>Potential Profit</Text>
                 <Text style={tw`text-[#22C55E] font-black text-lg`}>
                   <motion.span key={((Number(profitabilityPercent)/100) * Number(investmentAmount)).toFixed(2)} initial={{ y: prefersReducedMotion ? 0 : -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}>
@@ -1448,14 +1334,14 @@ export function LiveAnalysis() {
             {/* Manual Trade Result Declaration */}
             <View style={tw`mt-4 bg-black/40 rounded-2xl p-6 border border-[#D9B382]/30 shadow-lg`}>
                 <Text style={tw`text-[#D9B382] font-black uppercase tracking-[2px] text-xs mb-4 text-center`}>
-                    {isStatsSaved ? 'TRADE RESULT FINALIZED' : 'DECLARE TRADE OUTCOME'}
+                    {confirmedOutcome ? 'TRADE RESULT FINALIZED' : 'DECLARE TRADE OUTCOME'}
                 </Text>
                 
-                {!isStatsSaved ? (
-                  <View style={tw`flex-row gap-4`}>
+                {!confirmedOutcome ? (
+                  <View style={tw`flex-row flex-wrap gap-4`}>
                     <Pressable 
-                      onPress={() => saveToStats(analysis, 'WIN')}
-                      style={({ pressed }) => [tw`flex-1 bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
+                      onPress={() => setConfirmedOutcome('WIN')}
+                      style={({ pressed }) => [tw`flex-1 min-w-[140px] bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
                         <CheckCircle size={18} color="white" style={tw`mr-2`} />
@@ -1464,8 +1350,8 @@ export function LiveAnalysis() {
                     </Pressable>
                     
                     <Pressable 
-                      onPress={() => saveToStats(analysis, 'LOSS')}
-                      style={({ pressed }) => [tw`flex-1 bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
+                      onPress={() => setConfirmedOutcome('LOSS')}
+                      style={({ pressed }) => [tw`flex-1 min-w-[140px] bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
                         <XCircle size={18} color="white" style={tw`mr-2`} />
@@ -1475,15 +1361,9 @@ export function LiveAnalysis() {
                   </View>
                 ) : (
                   <View style={tw`items-center`}>
-                    {confirmedOutcome && (
-                      <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-4 flex-row items-center border border-white/20 shadow-xl`}>
-                        {confirmedOutcome === 'WIN' ? <CheckCircle size={24} color="white" style={tw`mr-3`} /> : <XCircle size={24} color="white" style={tw`mr-3`} />}
-                        <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>{confirmedOutcome}</Text>
-                      </View>
-                    )}
-                    <View style={tw`bg-white/10 px-4 py-2 rounded-lg mb-4 flex-row items-center`}>
-                      <Check size={16} color="#22C55E" style={tw`mr-2`} />
-                      <Text style={tw`text-white text-xs font-bold`}>Entry added to statistics sequence.</Text>
+                    <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-4 flex-row items-center border border-white/20 shadow-xl`}>
+                      {confirmedOutcome === 'WIN' ? <CheckCircle size={24} color="white" style={tw`mr-3`} /> : <XCircle size={24} color="white" style={tw`mr-3`} />}
+                      <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>{confirmedOutcome}</Text>
                     </View>
                     
                     {confirmedOutcome === 'LOSS' && (
@@ -1495,14 +1375,6 @@ export function LiveAnalysis() {
                         <Text style={tw`text-white font-black uppercase text-xs tracking-[1px]`}>RUN LOSS AUTOPSY</Text>
                       </Pressable>
                     )}
-                    
-                    <Pressable 
-                      onPress={handleDownloadStats}
-                      style={({ pressed }) => [tw`bg-[#D9B382] h-12 px-8 rounded-xl items-center justify-center flex-row`, { opacity: pressed ? 0.7 : 1 }]}
-                    >
-                      <Download size={18} color="#1A1308" style={tw`mr-2`} />
-                      <Text style={tw`text-[#1A1308] font-black uppercase text-sm`}>Download Updated Stats</Text>
-                    </Pressable>
                   </View>
                 )}
             </View>

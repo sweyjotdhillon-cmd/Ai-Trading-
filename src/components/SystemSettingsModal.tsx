@@ -220,7 +220,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                   <View style={tw`border border-white/5 p-4 rounded-xl bg-black/20 mb-4`}>
                     <View style={tw`relative`}>
                       <Text style={tw`text-xs text-[#8B95B0] mb-2`}>Active AI Model</Text>
-                      <View style={tw`w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl flex-row justify-between items-center`}>
+                      <View style={tw`w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl flex-row flex-wrap justify-between items-center gap-2`}>
                         <Text style={tw`text-sm text-[#8B95B0]`}>Llama 3.2 90B Vision Instruct</Text>
                         <View style={tw`flex-row items-center gap-2`}>
                           <View style={tw`w-2 h-2 rounded-full ${systemTokenCount > 0 ? 'bg-green-500' : 'bg-red-500'}`} />

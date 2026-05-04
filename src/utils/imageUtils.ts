@@ -66,6 +66,68 @@ export const dataURLtoBlob = (dataurl: string): Blob => {
 /**
  * Computes temporal delta between two frames using pixel-based momentum analysis.
  */
+export function parseTimeframeToMinutes(timeframeStr: string): number {
+  if (!timeframeStr) return 1;
+  const str = timeframeStr.toLowerCase().trim();
+  const numMatches = str.match(/\d+(\.\d+)?/);
+  if (!numMatches) return 1;
+  
+  const num = parseFloat(numMatches[0]);
+  if (str.includes('h')) return num * 60;
+  if (str.includes('s')) return Math.max(0.1, num / 60);
+  if (str.includes('d')) return num * 1440;
+  
+  return num; // default to minutes
+}
+
+export function detectCandleCount(imageElement: HTMLImageElement | null, defaultCount: number = 60): number {
+  if (!imageElement) return defaultCount;
+  return defaultCount;
+}
+
+export function cropRightCandles(
+  imageSource: string, 
+  candlesToCut: number, 
+  totalCandles: number
+): Promise<{ leftSliceBase64: string, rightSliceBase64: string, cropRatio: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      let cropRatio = candlesToCut / Math.max(1, totalCandles);
+      cropRatio = Math.max(0.02, Math.min(0.4, cropRatio));
+      
+      const cutWidth = Math.floor(img.width * cropRatio);
+      const leftWidth = img.width - cutWidth;
+      const height = img.height;
+      
+      const canvasLeft = document.createElement('canvas');
+      canvasLeft.width = leftWidth;
+      canvasLeft.height = height;
+      const ctxLeft = canvasLeft.getContext('2d');
+      if (ctxLeft) {
+        ctxLeft.drawImage(img, 0, 0, leftWidth, height, 0, 0, leftWidth, height);
+      }
+      
+      const canvasRight = document.createElement('canvas');
+      canvasRight.width = cutWidth;
+      canvasRight.height = height;
+      const ctxRight = canvasRight.getContext('2d');
+      if (ctxRight) {
+        ctxRight.drawImage(img, leftWidth, 0, cutWidth, height, 0, 0, cutWidth, height);
+      }
+      
+      resolve({
+        leftSliceBase64: canvasLeft.toDataURL('image/jpeg', 0.9),
+        rightSliceBase64: canvasRight.toDataURL('image/jpeg', 0.9),
+        cropRatio
+      });
+    };
+    img.onerror = reject;
+    img.src = imageSource;
+  });
+}
+
 export const createTemporalDelta = (currentBase64: string, cachedBase64: string): Promise<{
   momentum_concentration: 'UPPER' | 'LOWER' | 'NEUTRAL',
   price_velocity: number,

@@ -3,10 +3,9 @@ import { motion, useReducedMotion } from 'motion/react';
 
 interface HeroMotionProps {
   onStart: () => void;
-  onViewStats: () => void;
 }
 
-export function HeroMotion({ onStart, onViewStats }: HeroMotionProps) {
+export function HeroMotion({ onStart }: HeroMotionProps) {
   const prefersReducedMotion = useReducedMotion();
 
   // Typography stagger
@@ -216,15 +215,6 @@ export function HeroMotion({ onStart, onViewStats }: HeroMotionProps) {
             className="px-8 py-4 bg-gradient-to-r from-[#A67C52] via-[#D9B382] to-[#A67C52] rounded-xl text-[#05070A] font-bold tracking-wide uppercase text-sm"
           >
             Start Live Analysis →
-          </motion.button>
-          
-          <motion.button
-            whileHover={prefersReducedMotion ? {} : { scale: 1.03 }}
-            whileTap={prefersReducedMotion ? {} : { scale: 0.97 }}
-            onClick={onViewStats}
-            className="px-8 py-4 border border-white/10 hover:bg-white/5 rounded-xl text-white outline-none transition-colors font-medium text-sm"
-          >
-            View Statistics
           </motion.button>
         </motion.div>
       </div>

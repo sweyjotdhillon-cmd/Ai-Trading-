@@ -10,11 +10,10 @@ import {
   StatusBar,
   Platform
 } from 'react-native';
-import { Settings, LogIn, Activity, LayoutGrid, History as HistoryIcon } from 'lucide-react';
+import { Settings, LogIn, Activity, LayoutGrid } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'motion/react';
 
 import { LiveAnalysis } from './components/LiveAnalysis';
-import { StatisticsView } from './components/StatisticsView';
 import { SystemSettingsModal } from './components/SystemSettingsModal';
 import { HeroMotion } from './components/HeroMotion';
 import { auth, signIn, logOut as firebaseLogOut } from './firebase';
@@ -25,8 +24,6 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  const [activeTab, setActiveTab] = useState<'live' | 'stats'>('live');
   const [showSystemSettings, setShowSystemSettings] = useState(false);
   const [heroDismissed, setHeroDismissed] = useState(false);
   
@@ -238,14 +235,13 @@ function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -12, filter: prefersReducedMotion ? 'none' : 'blur(4px)' }}
                 transition={transitionProps}
-                style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, flexGrow: 1 }}
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1 }}
               >
                 <HeroMotion 
-                  onStart={() => { setActiveTab('live'); setHeroDismissed(true); }}
-                  onViewStats={() => { setActiveTab('stats'); setHeroDismissed(true); }}
+                  onStart={() => { setHeroDismissed(true); }}
                 />
               </motion.div>
-            ) : activeTab === 'live' ? (
+            ) : (
               <motion.div
                 key="live"
                 layout
@@ -253,21 +249,9 @@ function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -12 }}
                 transition={transitionProps}
-                style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, flexGrow: 1 }}
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1 }}
               >
                 <LiveAnalysis />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="stats"
-                layout
-                initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -12 }}
-                transition={transitionProps}
-                style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, flexGrow: 1 }}
-              >
-                <StatisticsView />
               </motion.div>
             )}
           </AnimatePresence>
@@ -278,38 +262,20 @@ function App() {
       <View style={styles.bottomBar}>
         <Pressable 
           style={({ pressed }) => [styles.bottomBarItem, { opacity: pressed ? 0.7 : 1 }]} 
-          onPress={() => setTimeout(() => { setActiveTab('live'); setHeroDismissed(true); }, 10)}
+          onPress={() => setTimeout(() => { setHeroDismissed(true); }, 10)}
         >
           <motion.div
             whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
             whileTap={prefersReducedMotion ? {} : { scale: 0.96 }}
-            animate={{ scale: activeTab === 'live' ? (prefersReducedMotion ? 1 : 1.08) : 1 }}
+            animate={{ scale: prefersReducedMotion ? 1 : 1.08 }}
             transition={springProps}
             style={{ display: 'contents' }}
           >
-            <View style={[styles.bottomBarIcon, activeTab === 'live' && styles.bottomBarIconActive]}>
-              <LayoutGrid color={activeTab === 'live' ? '#1A1308' : '#8E9299'} size={22} />
+            <View style={[styles.bottomBarIcon, styles.bottomBarIconActive]}>
+              <LayoutGrid color={'#1A1308'} size={22} />
             </View>
           </motion.div>
-          <Text style={[styles.bottomBarText, activeTab === 'live' && styles.bottomBarTextActive]}>Console</Text>
-        </Pressable>
-        
-        <Pressable 
-          style={({ pressed }) => [styles.bottomBarItem, { opacity: pressed ? 0.7 : 1 }]} 
-          onPress={() => setTimeout(() => { setActiveTab('stats'); setHeroDismissed(true); }, 10)}
-        >
-          <motion.div
-            whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
-            whileTap={prefersReducedMotion ? {} : { scale: 0.96 }}
-            animate={{ scale: activeTab === 'stats' ? (prefersReducedMotion ? 1 : 1.08) : 1 }}
-            transition={springProps}
-            style={{ display: 'contents' }}
-          >
-            <View style={[styles.bottomBarIcon, activeTab === 'stats' && styles.bottomBarIconActive]}>
-              <HistoryIcon color={activeTab === 'stats' ? '#1A1308' : '#8E9299'} size={22} />
-            </View>
-          </motion.div>
-          <Text style={[styles.bottomBarText, activeTab === 'stats' && styles.bottomBarTextActive]}>History</Text>
+          <Text style={[styles.bottomBarText, styles.bottomBarTextActive]}>Console</Text>
         </Pressable>
       </View>
 
