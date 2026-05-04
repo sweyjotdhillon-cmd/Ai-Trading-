@@ -827,7 +827,7 @@ export function LiveAnalysis() {
                     key={s.name}
                     onPress={() => setStockName(s.name)}
                     style={({ pressed }) => [
-                      tw`flex-1 min-w-[30%] py-2.5 rounded-lg border items-center flex-row justify-center`,
+                      tw`flex-1 min-w-[28%] py-2.5 rounded-lg border items-center flex-row justify-center`,
                       stockName === s.name ? tw`bg-[#D9B382] border-[#D9B382]` : tw`bg-black/20 border-white/5`,
                       { opacity: pressed ? 0.7 : 1 }
                     ]}
@@ -1341,7 +1341,7 @@ export function LiveAnalysis() {
                   <View style={tw`flex-row flex-wrap gap-4`}>
                     <Pressable 
                       onPress={() => setConfirmedOutcome('WIN')}
-                      style={({ pressed }) => [tw`flex-1 min-w-[140px] bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
+                      style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
                         <CheckCircle size={18} color="white" style={tw`mr-2`} />
@@ -1351,7 +1351,7 @@ export function LiveAnalysis() {
                     
                     <Pressable 
                       onPress={() => setConfirmedOutcome('LOSS')}
-                      style={({ pressed }) => [tw`flex-1 min-w-[140px] bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
+                      style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
                         <XCircle size={18} color="white" style={tw`mr-2`} />

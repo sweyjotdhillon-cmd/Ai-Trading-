@@ -339,7 +339,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
                 </motion.div>
 
                 {/* Footer buttons */}
-                <View style={tw`flex-row gap-4 border-t border-white/10 pt-6`}>
+                <View style={tw`flex-row flex-wrap gap-4 border-t border-white/10 pt-6`}>
                   <Pressable 
                     onPress={logToSheets}
                     disabled={isLogged}
