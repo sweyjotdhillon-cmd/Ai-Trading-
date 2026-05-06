@@ -775,7 +775,7 @@ Respond ONLY in JSON with this exact schema:
 }`;
       
       const response = await callModel({
-          model: "gpt-4o-mini",
+          model: "gpt-4o",
           prompt,
           image: optimizedBase64,
           jsonMode: true,
@@ -832,9 +832,9 @@ Respond ONLY in JSON with this exact schema:
       }
       `;
 
-      // We use the faster mini model for scouting to reduce latency
+      // We use gpt-4o to prevent 401 errors on restrictive tokens
       const rawResponse = await callModel({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         prompt,
         image,
         jsonMode: true,

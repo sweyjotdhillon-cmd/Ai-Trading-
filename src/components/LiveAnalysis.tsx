@@ -135,6 +135,8 @@ export function LiveAnalysis() {
   const [confirmedOutcome, setConfirmedOutcome] = useState<'WIN' | 'LOSS' | null>(null);
   const [showAutopsyModal, setShowAutopsyModal] = useState(false);
   const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(null);
+  const [cropError, setCropError] = useState<string | null>(null);
+  const [autoGradeStatus, setAutoGradeStatus] = useState<string | null>(null);
 
   const fileInputRef = useRef<any>(null);
   const techInputRef = useRef<any>(null);
@@ -424,15 +426,15 @@ export function LiveAnalysis() {
         profitPercentage: profitPct,
         profitPotential: potentialProfit,
         lossPotential: investAmt,
-        signal: analysisData.judge.winner === 'BULL' ? 'CALL' : 
-                (analysisData.judge.winner === 'BEAR' ? 'PUT' : 'WAIT'),
+        signal: analysisData?.judge?.winner === 'BULL' ? 'CALL' : 
+                (analysisData?.judge?.winner === 'BEAR' ? 'PUT' : 'WAIT'),
         result: outcome,
         exactProfit: outcome === 'WIN' ? potentialProfit : -investAmt,
         profitAmount: outcome === 'WIN' ? potentialProfit : -investAmt,
-        reasoning: analysisData.judge.ruling,
-        confidence: analysisData.judge.finalConfidence,
-        totalScore: analysisData.judge.totalScore,
-        decision: analysisData.judge.decision,
+        reasoning: analysisData?.judge?.ruling || 'N/A',
+        confidence: analysisData?.judge?.finalConfidence || 0,
+        totalScore: analysisData?.judge?.totalScore || 0,
+        decision: analysisData?.judge?.decision || 'UNKNOWN',
         techniquesApplied: techniquesList,
         isAutoGraded: mode === 'test'
       };
@@ -486,6 +488,8 @@ export function LiveAnalysis() {
         try {
           setLoading(true);
         setAnalysisError(null);
+        setCropError(null);
+        setAutoGradeStatus(null);
         setAnalysis(null);
         setTradingPhase('ANALYSING_DIRECTION');
         setAnalysisStep(`SYNCHRONIZING ${techniquesList.length} TECHNIQUES...`);
@@ -549,9 +553,26 @@ export function LiveAnalysis() {
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ image: rightSliceBase64, encryptedSystemTokens })
                 }).then(r => r.json());
-              } catch (err) {
-                 console.error("[TEST_MODE] fail during crop:", err);
+              } catch (err: any) {
+                console.error("[TEST_MODE] fail during crop:", err);
+                const reason = err?.message || 'Unknown error';
+                setCropError(
+                  `CROP FAILED: ${reason}. Analysis was cancelled — retake screenshot and try again.`
+                );
+                // Stop analysis entirely — do not proceed with full uncropped image
+                setTradingPhase('IDLE');
+                setAnalysisStep('CROP FAILED — SEE ERROR BELOW');
+                setAutoGradeStatus('failed');
+                return; // EXIT handleAnalyze early
               }
+           } else {
+             setCropError(
+               `CROP FAILED: Could not parse investment duration "${investmentDuration}". Please enter a valid duration (e.g. "5m", "3m", "1m") and try again.`
+             );
+             setTradingPhase('IDLE');
+             setAnalysisStep('INVALID DURATION — SEE ERROR BELOW');
+             setAutoGradeStatus('failed');
+             return;
            }
         }
 
@@ -707,21 +728,28 @@ export function LiveAnalysis() {
           }
         }
         
-        if (mode === 'test' && autoOutcomeResult) {
-          const autoOutcomeDirection = autoOutcomeResult.outcome;
-          if (autoOutcomeDirection === 'INCONCLUSIVE' || !autoOutcomeDirection) {
-            // Graceful fallback — do nothing, let manual buttons show
-            setAnalysisStep('AUTO-READ INCONCLUSIVE — GRADE MANUALLY');
+        if (mode === 'test') {
+          if (autoOutcomeResult?.error) {
+             console.error("AutoOutcome API error:", autoOutcomeResult.error);
+             setAnalysisStep(`AUTO-READ FAILED: ${autoOutcomeResult.error.substring(0, 50)}...`);
+          } else if (autoOutcomeResult) {
+            const autoOutcomeDirection = autoOutcomeResult.outcome;
+            if (autoOutcomeDirection === 'INCONCLUSIVE' || !autoOutcomeDirection) {
+              // Graceful fallback — do nothing, let manual buttons show
+              setAnalysisStep('AUTO-READ INCONCLUSIVE — GRADE MANUALLY');
+            } else {
+              const isWin = 
+                (direction === 'UP' && autoOutcomeDirection === 'UP') || 
+                (direction === 'DOWN' && autoOutcomeDirection === 'DOWN');
+              setTimeout(() => {
+                saveToStats(data, isWin ? 'WIN' : 'LOSS');
+                setAnalysisStep(
+                  `AUTO-GRADED: Signal=${direction} | Market=${autoOutcomeDirection} | ${isWin ? '✅ WIN' : '❌ LOSS'}`
+                );
+              }, 1000);
+            }
           } else {
-            const isWin = 
-              (direction === 'UP' && autoOutcomeDirection === 'UP') || 
-              (direction === 'DOWN' && autoOutcomeDirection === 'DOWN');
-            setTimeout(() => {
-              saveToStats(data, isWin ? 'WIN' : 'LOSS');
-              setAnalysisStep(
-                `AUTO-GRADED: Signal=${direction} | Market=${autoOutcomeDirection} | ${isWin ? '✅ WIN' : '❌ LOSS'}`
-              );
-            }, 1000);
+             setAnalysisStep('AUTO-READ MISSING — GRADE MANUALLY');
           }
         }
 
@@ -1422,7 +1450,24 @@ export function LiveAnalysis() {
                 <Text style={tw`text-[#D9B382] font-black uppercase tracking-[2px] text-xs mb-4 text-center`}>
                   AUTO-TEST RESULT
                 </Text>
-                {!confirmedOutcome ? (
+                {(autoGradeStatus === 'failed' || cropError) && !confirmedOutcome ? (
+                  <View style={tw`items-center py-4`}>
+                    <AlertTriangle size={32} color="#ef4444" style={tw`mb-3`} />
+                    <Text style={tw`text-red-400 font-black uppercase text-xs tracking-widest text-center mb-2`}>
+                      ⚠️ CROP FAILED
+                    </Text>
+                    {cropError && (
+                      <View style={tw`bg-red-950/60 border border-red-500/40 rounded-xl px-4 py-3 w-full mt-1`}>
+                        <Text style={tw`text-red-300 text-xs text-center leading-5`}>
+                          {cropError}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={tw`text-white/40 text-[10px] text-center mt-3 uppercase tracking-widest`}>
+                      Tip: Use a chart with at least 20 visible candles
+                    </Text>
+                  </View>
+                ) : !confirmedOutcome ? (
                   // Still loading or INCONCLUSIVE — show manual buttons as fallback
                   <View style={tw`flex-row flex-wrap gap-4`}>
                     <Pressable 
