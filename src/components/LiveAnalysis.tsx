@@ -30,7 +30,7 @@ import tw from 'twrnc';
 import { db } from '../firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { LossAutopsyModal } from './LossAutopsyModal';
-import { parseTimeframeToMinutes, autoDetectCandles, cropRightCandles } from '../utils/imageUtils';
+import { parseTimeframeToMinutes, autoDetectCandles, cropRightByRatio } from '../utils/imageUtils';
 
 const JUDGE_TASKS = {
   judge1: ["Scanning support nodes...", "Evaluating volume nodes...", "Mapping price patterns...", "Analyzing breakouts...", "Finalizing Bullish Case..."],
@@ -543,10 +543,15 @@ export function LiveAnalysis() {
               console.debug(`[TEST_MODE] rawDuration=${investmentDuration}, parseDuration=${parseDuration}m, detectedCandles=${estimatedCandles}, timeframe=${parseTimeframeToMinutes(graphTimeframe)}m`);
               
               try {
-                const { leftSliceBase64, rightSliceBase64: rightSlice, cropRatio } = await cropRightCandles(
+                let ratio = 0.1; // default 10%
+                const gDuration = parseTimeframeToMinutes(graphTimeframe);
+                if (!isNaN(parseDuration) && !isNaN(gDuration) && gDuration > 0) {
+                    ratio = parseDuration / gDuration;
+                }
+                
+                const { leftSliceBase64, rightSliceBase64: rightSlice, cropRatio } = await cropRightByRatio(
                   optimizedImageForCrop,
-                  parseDuration,
-                  estimatedCandles
+                  ratio
                 );
                 
                 console.debug(`[TEST_MODE] cropRatio=${cropRatio.toFixed(3)}`);

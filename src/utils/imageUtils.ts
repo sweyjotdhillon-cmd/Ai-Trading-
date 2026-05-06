@@ -146,17 +146,15 @@ export function autoDetectCandles(imageSource: string): Promise<number> {
   });
 }
 
-export function cropRightCandles(
+export function cropRightByRatio(
   imageSource: string, 
-  candlesToCut: number, 
-  totalCandles: number
+  cropRatio: number
 ): Promise<{ leftSliceBase64: string, rightSliceBase64: string, cropRatio: number }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      let cropRatio = candlesToCut / Math.max(1, totalCandles);
-      cropRatio = Math.max(0.02, Math.min(0.4, cropRatio));
+      cropRatio = Math.max(0.05, Math.min(0.4, cropRatio)); // Clamp ratio between 5% and 40%
       
       const cutWidth = Math.floor(img.width * cropRatio);
       const leftWidth = img.width - cutWidth;
