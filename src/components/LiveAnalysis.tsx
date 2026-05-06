@@ -136,7 +136,7 @@ export function LiveAnalysis() {
   const [showAutopsyModal, setShowAutopsyModal] = useState(false);
   const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(null);
   const [cropError, setCropError] = useState<string | null>(null);
-  const [autoGradeStatus, setAutoGradeStatus] = useState<string | null>(null);
+  const [autoGradeStatus, setAutoGradeStatus] = useState<'idle' | 'grading' | 'done' | 'failed'>('idle');
 
   const fileInputRef = useRef<any>(null);
   const techInputRef = useRef<any>(null);
@@ -174,6 +174,7 @@ export function LiveAnalysis() {
     setTradingPhase('IDLE');
     setTradingDirection(null);
     setConfirmedOutcome(null);
+    setAutoGradeStatus('idle');
     setShowAutopsyModal(false);
     setMode('camera');
     setStockName('Bitcoin');
@@ -530,6 +531,7 @@ export function LiveAnalysis() {
         let rightSliceBase64: string | null = null;
         let autoOutcomePromise: Promise<any> | null = null;
 
+        if (mode === 'test') setAutoGradeStatus('grading');
         if (mode === 'test' && Platform.OS === 'web' && optimizedImageForCrop) {
            const parseDuration = parseTimeframeToMinutes(investmentDuration);
            if (!isNaN(parseDuration)) {
@@ -729,27 +731,23 @@ export function LiveAnalysis() {
         }
         
         if (mode === 'test') {
-          if (autoOutcomeResult?.error) {
-             console.error("AutoOutcome API error:", autoOutcomeResult.error);
-             setAnalysisStep(`AUTO-READ FAILED: ${autoOutcomeResult.error.substring(0, 50)}...`);
-          } else if (autoOutcomeResult) {
+          if (autoOutcomeResult && autoOutcomeResult.outcome && 
+              autoOutcomeResult.outcome !== 'INCONCLUSIVE') {
             const autoOutcomeDirection = autoOutcomeResult.outcome;
-            if (autoOutcomeDirection === 'INCONCLUSIVE' || !autoOutcomeDirection) {
-              // Graceful fallback — do nothing, let manual buttons show
-              setAnalysisStep('AUTO-READ INCONCLUSIVE — GRADE MANUALLY');
-            } else {
-              const isWin = 
-                (direction === 'UP' && autoOutcomeDirection === 'UP') || 
-                (direction === 'DOWN' && autoOutcomeDirection === 'DOWN');
-              setTimeout(() => {
-                saveToStats(data, isWin ? 'WIN' : 'LOSS');
-                setAnalysisStep(
-                  `AUTO-GRADED: Signal=${direction} | Market=${autoOutcomeDirection} | ${isWin ? '✅ WIN' : '❌ LOSS'}`
-                );
-              }, 1000);
-            }
+            const isWin = 
+              (direction === 'UP' && autoOutcomeDirection === 'UP') || 
+              (direction === 'DOWN' && autoOutcomeDirection === 'DOWN');
+            setTimeout(() => {
+              saveToStats(data, isWin ? 'WIN' : 'LOSS');
+              setAutoGradeStatus('done');
+              setAnalysisStep(
+                `AUTO-GRADED: Signal=${direction} | Market=${autoOutcomeDirection} | ${isWin ? '✅ WIN' : '❌ LOSS'}`
+              );
+            }, 1000);
           } else {
-             setAnalysisStep('AUTO-READ MISSING — GRADE MANUALLY');
+            // Right slice unreadable or crop failed — mark as failed
+            setAutoGradeStatus('failed');
+            setAnalysisStep('AUTO-GRADE FAILED — RETAKE SCREENSHOT WITH MORE CANDLES');
           }
         }
 
@@ -1450,42 +1448,32 @@ export function LiveAnalysis() {
                 <Text style={tw`text-[#D9B382] font-black uppercase tracking-[2px] text-xs mb-4 text-center`}>
                   AUTO-TEST RESULT
                 </Text>
-                {(autoGradeStatus === 'failed' || cropError) && !confirmedOutcome ? (
+
+                {/* GRADING IN PROGRESS */}
+                {autoGradeStatus === 'grading' && !confirmedOutcome && (
+                  <View style={tw`items-center py-4`}>
+                    <ActivityIndicator color="#D9B382" size="large" />
+                    <Text style={tw`text-[#D9B382] text-xs font-black uppercase tracking-widest mt-3`}>
+                      READING MARKET OUTCOME...
+                    </Text>
+                  </View>
+                )}
+
+                {/* AUTO-GRADE FAILED */}
+                {autoGradeStatus === 'failed' && !confirmedOutcome && (
                   <View style={tw`items-center py-4`}>
                     <AlertTriangle size={32} color="#ef4444" style={tw`mb-3`} />
-                    <Text style={tw`text-red-400 font-black uppercase text-xs tracking-widest text-center mb-2`}>
-                      ⚠️ CROP FAILED
+                    <Text style={tw`text-red-400 font-black uppercase text-xs tracking-widest text-center mb-1`}>
+                      AUTO-GRADE FAILED
                     </Text>
-                    {cropError && (
-                      <View style={tw`bg-red-950/60 border border-red-500/40 rounded-xl px-4 py-3 w-full mt-1`}>
-                        <Text style={tw`text-red-300 text-xs text-center leading-5`}>
-                          {cropError}
-                        </Text>
-                      </View>
-                    )}
-                    <Text style={tw`text-white/40 text-[10px] text-center mt-3 uppercase tracking-widest`}>
-                      Tip: Use a chart with at least 20 visible candles
+                    <Text style={tw`text-white/50 text-xs text-center`}>
+                      Right slice unreadable. Retake screenshot with more visible candles on the right.
                     </Text>
                   </View>
-                ) : !confirmedOutcome ? (
-                  // Still loading or INCONCLUSIVE — show manual buttons as fallback
-                  <View style={tw`flex-row flex-wrap gap-4`}>
-                    <Pressable 
-                      onPress={() => saveToStats(analysis, 'WIN')}
-                      style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
-                    >
-                      <CheckCircle size={18} color="white" style={tw`mr-2`} />
-                      <Text style={tw`text-white font-black uppercase text-sm`}>WIN (MANUAL)</Text>
-                    </Pressable>
-                    <Pressable 
-                      onPress={() => saveToStats(analysis, 'LOSS')}
-                      style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
-                    >
-                      <XCircle size={18} color="white" style={tw`mr-2`} />
-                      <Text style={tw`text-white font-black uppercase text-sm`}>LOSS (MANUAL)</Text>
-                    </Pressable>
-                  </View>
-                ) : (
+                )}
+
+                {/* AUTO-GRADE SUCCESS */}
+                {confirmedOutcome && (
                   <View style={tw`items-center`}>
                     <View style={tw`flex-row items-center mb-2`}>
                       <Zap size={14} color="#D9B382" style={tw`mr-2`} />
@@ -1495,14 +1483,14 @@ export function LiveAnalysis() {
                     </View>
                     <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-4 flex-row items-center border border-white/20 shadow-xl`}>
                       {confirmedOutcome === 'WIN' 
-                        ? <CheckCircle size={24} color="white" style={tw`mr-3`} /> 
+                        ? <CheckCircle size={24} color="white" style={tw`mr-3`} />
                         : <XCircle size={24} color="white" style={tw`mr-3`} />}
                       <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>
                         {confirmedOutcome}
                       </Text>
                     </View>
                     {confirmedOutcome === 'LOSS' && (
-                      <Pressable 
+                      <Pressable
                         onPress={() => setShowAutopsyModal(true)}
                         style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-4`, { opacity: pressed ? 0.7 : 1 }]}
                       >
