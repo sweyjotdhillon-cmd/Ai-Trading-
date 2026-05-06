@@ -765,13 +765,19 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
 
       const optimizedBase64 = image.replace(/^data:image\/\w+;base64,/, "");
 
-      const prompt = `This is a small cropped section of a financial candlestick chart showing the rightmost portion (the most recent price movement). 
-Based on where the price ended compared to where it started on the left edge of this image, did the price go UP or DOWN overall? 
-Also provide your confidence (0-100).
-Respond ONLY in JSON with this exact schema:
+      const prompt = `This is a small cropped section of a financial candlestick chart 
+showing the rightmost portion (the "future" outcome window after a trade signal).
+
+Compare where the price ENDS at the right edge versus where it STARTS at the left edge.
+- If the closing price on the right is clearly above the opening price on the left -> "UP"
+- If clearly below -> "DOWN"
+- If within ~0.1% or no candles are visible -> "FLAT"
+
+Respond ONLY in JSON:
 {
   "outcome": "UP" | "DOWN" | "FLAT",
-  "confidence": number
+  "confidence": number (0-100),
+  "reason": "one short sentence citing the actual visible candle behavior"
 }`;
       
       const response = await callModel({
@@ -782,19 +788,26 @@ Respond ONLY in JSON with this exact schema:
           tokenManager
       });
 
-      let parsed;
+      let parsed: any;
       try {
         const cleanRaw = response.replace(/```json|```/g, '').trim();
         parsed = JSON.parse(cleanRaw);
       } catch {
-        parsed = { outcome: 'FLAT', confidence: 0 };
+        parsed = { outcome: 'FLAT', confidence: 0, reason: 'Parser failure' };
       }
 
-      if (['UP', 'DOWN', 'FLAT'].includes(parsed.outcome)) {
-         res.json({ outcome: parsed.outcome });
-      } else {
-         res.json({ outcome: 'FLAT' });
-      }
+      const validOutcomes = ['UP', 'DOWN', 'FLAT'];
+      if (!validOutcomes.includes(parsed.outcome)) parsed.outcome = 'FLAT';
+
+      // Treat low-confidence and FLAT as INCONCLUSIVE so the client can fall back to manual
+      const isInconclusive = parsed.outcome === 'FLAT' || Number(parsed.confidence) < 60;
+
+      return res.json({
+        outcome: isInconclusive ? 'INCONCLUSIVE' : parsed.outcome,
+        rawOutcome: parsed.outcome,
+        confidence: Number(parsed.confidence) || 0,
+        reason: parsed.reason || ''
+      });
     } catch (error: any) {
       console.error("Read outcome error:", error);
       res.status(500).json({ error: error.message || "Read outcome failed" });

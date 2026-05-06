@@ -135,8 +135,10 @@ export function LiveAnalysis() {
   const [confirmedOutcome, setConfirmedOutcome] = useState<'WIN' | 'LOSS' | null>(null);
   const [showAutopsyModal, setShowAutopsyModal] = useState(false);
   const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(null);
-  const [cropError, setCropError] = useState<string | null>(null);
   const [autoGradeStatus, setAutoGradeStatus] = useState<'idle' | 'grading' | 'done' | 'failed'>('idle');
+  const [testModeLeftSlice, setTestModeLeftSlice] = useState<string | null>(null);
+  const [autoGradeReason, setAutoGradeReason] = useState<string>('');
+  const [autoGradeConfidence, setAutoGradeConfidence] = useState<number>(0);
 
   const fileInputRef = useRef<any>(null);
   const techInputRef = useRef<any>(null);
@@ -175,6 +177,9 @@ export function LiveAnalysis() {
     setTradingDirection(null);
     setConfirmedOutcome(null);
     setAutoGradeStatus('idle');
+    setTestModeLeftSlice(null);
+    setAutoGradeReason('');
+    setAutoGradeConfidence(0);
     setShowAutopsyModal(false);
     setMode('camera');
     setStockName('Bitcoin');
@@ -489,8 +494,7 @@ export function LiveAnalysis() {
         try {
           setLoading(true);
         setAnalysisError(null);
-        setCropError(null);
-        setAutoGradeStatus(null);
+        setAutoGradeStatus('idle');
         setAnalysis(null);
         setTradingPhase('ANALYSING_DIRECTION');
         setAnalysisStep(`SYNCHRONIZING ${techniquesList.length} TECHNIQUES...`);
@@ -549,7 +553,8 @@ export function LiveAnalysis() {
                 finalImageForAnalysis = leftSliceBase64;
                 rightSliceBase64 = rightSlice;
                 setTestModeRightSlice(rightSlice);
-                
+                setTestModeLeftSlice(leftSliceBase64);
+
                 autoOutcomePromise = fetchWithRetry('/api/read-outcome', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -558,7 +563,7 @@ export function LiveAnalysis() {
               } catch (err: any) {
                 console.error("[TEST_MODE] fail during crop:", err);
                 const reason = err?.message || 'Unknown error';
-                setCropError(
+                setAutoGradeReason(
                   `CROP FAILED: ${reason}. Analysis was cancelled — retake screenshot and try again.`
                 );
                 // Stop analysis entirely — do not proceed with full uncropped image
@@ -568,7 +573,7 @@ export function LiveAnalysis() {
                 return; // EXIT handleAnalyze early
               }
            } else {
-             setCropError(
+             setAutoGradeReason(
                `CROP FAILED: Could not parse investment duration "${investmentDuration}". Please enter a valid duration (e.g. "5m", "3m", "1m") and try again.`
              );
              setTradingPhase('IDLE');
@@ -731,23 +736,28 @@ export function LiveAnalysis() {
         }
         
         if (mode === 'test') {
-          if (autoOutcomeResult && autoOutcomeResult.outcome && 
-              autoOutcomeResult.outcome !== 'INCONCLUSIVE') {
-            const autoOutcomeDirection = autoOutcomeResult.outcome;
-            const isWin = 
-              (direction === 'UP' && autoOutcomeDirection === 'UP') || 
-              (direction === 'DOWN' && autoOutcomeDirection === 'DOWN');
+          const oc = autoOutcomeResult?.outcome;
+          const confNum = Number(autoOutcomeResult?.confidence) || 0;
+          setAutoGradeReason(autoOutcomeResult?.reason || '');
+          setAutoGradeConfidence(confNum);
+
+          if (oc === 'UP' || oc === 'DOWN') {
+            const isWin =
+              (direction === 'UP'   && oc === 'UP') ||
+              (direction === 'DOWN' && oc === 'DOWN');
             setTimeout(() => {
               saveToStats(data, isWin ? 'WIN' : 'LOSS');
               setAutoGradeStatus('done');
               setAnalysisStep(
-                `AUTO-GRADED: Signal=${direction} | Market=${autoOutcomeDirection} | ${isWin ? '✅ WIN' : '❌ LOSS'}`
+                `AUTO-GRADED: Signal=${direction} | Market=${oc} | ${isWin ? '✅ WIN' : '❌ LOSS'} (${confNum}%)`
               );
-            }, 1000);
+            }, 800);
           } else {
-            // Right slice unreadable or crop failed — mark as failed
+            // INCONCLUSIVE or null -> hand back to user instead of dead-ending
             setAutoGradeStatus('failed');
-            setAnalysisStep('AUTO-GRADE FAILED — RETAKE SCREENSHOT WITH MORE CANDLES');
+            setAnalysisStep(
+              `AUTO-GRADE INCONCLUSIVE — please declare WIN or LOSS manually.`
+            );
           }
         }
 
@@ -786,6 +796,31 @@ export function LiveAnalysis() {
     }, 10);
   };
 
+  const handleRegrade = async () => {
+    if (!testModeRightSlice) return;
+    setAutoGradeStatus('grading');
+    try {
+      const r = await fetch('/api/read-outcome', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: testModeRightSlice, encryptedSystemTokens })
+      });
+      const j = await r.json();
+      setAutoGradeReason(j.reason || '');
+      setAutoGradeConfidence(Number(j.confidence) || 0);
+      if (j.outcome === 'UP' || j.outcome === 'DOWN') {
+        const isWin =
+          (tradingDirection === 'UP'   && j.outcome === 'UP') ||
+          (tradingDirection === 'DOWN' && j.outcome === 'DOWN');
+        saveToStats(analysis, isWin ? 'WIN' : 'LOSS');
+        setAutoGradeStatus('done');
+      } else {
+        setAutoGradeStatus('failed');
+      }
+    } catch {
+      setAutoGradeStatus('failed');
+    }
+  };
 
   return (
     <View style={tw`flex-1 bg-black relative`}>
@@ -1449,6 +1484,24 @@ export function LiveAnalysis() {
                   AUTO-TEST RESULT
                 </Text>
 
+                {/* Slice preview — visual confirmation that the crop did what user expected */}
+                {(testModeLeftSlice || testModeRightSlice) && (
+                  <View style={tw`flex-row gap-2 mb-4 justify-center`}>
+                    {testModeLeftSlice && (
+                      <View style={tw`items-center`}>
+                        <Text style={tw`text-white/40 text-[9px] uppercase mb-1`}>Analyzed (Past)</Text>
+                        <img src={testModeLeftSlice} style={{ height: 60, borderRadius: 6, border: '1px solid rgba(217,179,130,0.4)' }} />
+                      </View>
+                    )}
+                    {testModeRightSlice && (
+                      <View style={tw`items-center`}>
+                        <Text style={tw`text-amber-300 text-[9px] uppercase mb-1`}>Outcome Window</Text>
+                        <img src={testModeRightSlice} style={{ height: 60, borderRadius: 6, border: '1px solid rgba(239,68,68,0.5)' }} />
+                      </View>
+                    )}
+                  </View>
+                )}
+
                 {/* GRADING IN PROGRESS */}
                 {autoGradeStatus === 'grading' && !confirmedOutcome && (
                   <View style={tw`items-center py-4`}>
@@ -1459,16 +1512,44 @@ export function LiveAnalysis() {
                   </View>
                 )}
 
-                {/* AUTO-GRADE FAILED */}
+                {/* AUTO-GRADE FAILED / INCONCLUSIVE — show MANUAL fallback buttons */}
                 {autoGradeStatus === 'failed' && !confirmedOutcome && (
-                  <View style={tw`items-center py-4`}>
-                    <AlertTriangle size={32} color="#ef4444" style={tw`mb-3`} />
-                    <Text style={tw`text-red-400 font-black uppercase text-xs tracking-widest text-center mb-1`}>
-                      AUTO-GRADE FAILED
+                  <View style={tw`items-center py-2`}>
+                    <AlertTriangle size={28} color="#f59e0b" style={tw`mb-2`} />
+                    <Text style={tw`text-amber-300 font-black uppercase text-xs tracking-widest text-center mb-1`}>
+                      AUTO-GRADE INCONCLUSIVE
                     </Text>
-                    <Text style={tw`text-white/50 text-xs text-center`}>
-                      Right slice unreadable. Retake screenshot with more visible candles on the right.
+                    <Text style={tw`text-white/50 text-xs text-center mb-4 px-4`}>
+                      {autoGradeReason || 'Right slice was unreadable or price was flat. Declare manually below.'}
+                      {autoGradeConfidence > 0 && ` (AI conf: ${autoGradeConfidence}%)`}
                     </Text>
+
+                    {/* Manual fallback buttons — same UX as live mode */}
+                    <View style={tw`flex-row flex-wrap gap-3 w-full mb-3`}>
+                      <Pressable
+                        onPress={() => saveToStats(analysis, 'WIN')}
+                        style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
+                      >
+                        <CheckCircle size={18} color="white" style={tw`mr-2`} />
+                        <Text style={tw`text-white font-black uppercase text-sm`}>WIN</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => saveToStats(analysis, 'LOSS')}
+                        style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
+                      >
+                        <XCircle size={18} color="white" style={tw`mr-2`} />
+                        <Text style={tw`text-white font-black uppercase text-sm`}>LOSS</Text>
+                      </Pressable>
+                    </View>
+
+                    <Pressable
+                      onPress={handleRegrade}
+                      style={({ pressed }) => [tw`px-4 py-2 rounded-lg border border-[#D9B382]/40 bg-[#D9B382]/10`, { opacity: pressed ? 0.7 : 1 }]}
+                    >
+                      <Text style={tw`text-[#D9B382] text-[11px] font-black uppercase tracking-wider`}>
+                        🔄 RETRY AUTO-GRADE
+                      </Text>
+                    </Pressable>
                   </View>
                 )}
 
@@ -1478,21 +1559,26 @@ export function LiveAnalysis() {
                     <View style={tw`flex-row items-center mb-2`}>
                       <Zap size={14} color="#D9B382" style={tw`mr-2`} />
                       <Text style={tw`text-[#D9B382] text-[10px] font-black uppercase tracking-widest`}>
-                        AUTO-GRADED
+                        AUTO-GRADED ({autoGradeConfidence || '—'}% conf)
                       </Text>
                     </View>
-                    <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-4 flex-row items-center border border-white/20 shadow-xl`}>
-                      {confirmedOutcome === 'WIN' 
+                    <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-3 flex-row items-center border border-white/20 shadow-xl`}>
+                      {confirmedOutcome === 'WIN'
                         ? <CheckCircle size={24} color="white" style={tw`mr-3`} />
                         : <XCircle size={24} color="white" style={tw`mr-3`} />}
                       <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>
                         {confirmedOutcome}
                       </Text>
                     </View>
+                    {autoGradeReason && (
+                      <Text style={tw`text-white/50 text-[11px] italic text-center px-4 mb-3`}>
+                        “{autoGradeReason}”
+                      </Text>
+                    )}
                     {confirmedOutcome === 'LOSS' && (
                       <Pressable
                         onPress={() => setShowAutopsyModal(true)}
-                        style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-4`, { opacity: pressed ? 0.7 : 1 }]}
+                        style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-2`, { opacity: pressed ? 0.7 : 1 }]}
                       >
                         <AlertTriangle size={16} color="white" style={tw`mr-2`} />
                         <Text style={tw`text-white font-black uppercase text-xs tracking-[1px]`}>
@@ -1500,6 +1586,36 @@ export function LiveAnalysis() {
                         </Text>
                       </Pressable>
                     )}
+                    {/* Override option in case user disagrees with the auto-grade */}
+                    <Pressable
+                      onPress={() => {
+                        setConfirmedOutcome(null);
+                        setAutoGradeStatus('failed');
+                      }}
+                      style={tw`mt-1`}
+                    >
+                      <Text style={tw`text-white/40 text-[10px] underline`}>Override this grade</Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                {/* SAFETY NET — if for any reason none of the above conditions match, show manual buttons */}
+                {!confirmedOutcome && autoGradeStatus !== 'grading' && autoGradeStatus !== 'failed' && (
+                  <View style={tw`flex-row flex-wrap gap-3`}>
+                    <Pressable
+                      onPress={() => saveToStats(analysis, 'WIN')}
+                      style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-green-600 h-12 rounded-xl items-center justify-center flex-row`, { opacity: pressed ? 0.7 : 1 }]}
+                    >
+                      <CheckCircle size={18} color="white" style={tw`mr-2`} />
+                      <Text style={tw`text-white font-black uppercase text-sm`}>WIN</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => saveToStats(analysis, 'LOSS')}
+                      style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-red-600 h-12 rounded-xl items-center justify-center flex-row`, { opacity: pressed ? 0.7 : 1 }]}
+                    >
+                      <XCircle size={18} color="white" style={tw`mr-2`} />
+                      <Text style={tw`text-white font-black uppercase text-sm`}>LOSS</Text>
+                    </Pressable>
                   </View>
                 )}
               </View>
