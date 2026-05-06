@@ -154,7 +154,9 @@ export function cropRightByRatio(
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      cropRatio = Math.max(0.05, Math.min(0.4, cropRatio)); // Clamp ratio between 5% and 40%
+      // 2. Make crop logic smarter: increase default right-side crop window if it is too narrow
+      // so we use a minimum of 15% to ensure candles are actually visible
+      cropRatio = Math.max(0.15, Math.min(0.4, cropRatio)); 
       
       const cutWidth = Math.floor(img.width * cropRatio);
       const leftWidth = img.width - cutWidth;
@@ -168,17 +170,27 @@ export function cropRightByRatio(
         ctxLeft.drawImage(img, 0, 0, leftWidth, height, 0, 0, leftWidth, height);
       }
       
+      // 1. Improve right-slice readability: upscale 2x for clarity
+      const upscale = 2;
       const canvasRight = document.createElement('canvas');
-      canvasRight.width = cutWidth;
-      canvasRight.height = height;
+      canvasRight.width = Math.floor(cutWidth * upscale);
+      canvasRight.height = Math.floor(height * upscale);
       const ctxRight = canvasRight.getContext('2d');
       if (ctxRight) {
-        ctxRight.drawImage(img, leftWidth, 0, cutWidth, height, 0, 0, cutWidth, height);
+        ctxRight.imageSmoothingEnabled = true;
+        ctxRight.imageSmoothingQuality = 'high';
+        ctxRight.drawImage(
+          img, 
+          leftWidth, 0, cutWidth, height, 
+          0, 0, canvasRight.width, canvasRight.height
+        );
       }
       
+      console.log(`[CropRightByRatio] Original: ${img.width}x${img.height}, Ratio: ${cropRatio.toFixed(3)}, RightSlice: ${canvasRight.width}x${canvasRight.height} (Upscaled x${upscale})`);
+
       resolve({
-        leftSliceBase64: canvasLeft.toDataURL('image/jpeg', 0.9),
-        rightSliceBase64: canvasRight.toDataURL('image/jpeg', 0.9),
+        leftSliceBase64: canvasLeft.toDataURL('image/jpeg', 0.95), // slightly better quality
+        rightSliceBase64: canvasRight.toDataURL('image/jpeg', 0.95),
         cropRatio
       });
     };

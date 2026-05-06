@@ -139,6 +139,7 @@ export function LiveAnalysis() {
   const [testModeLeftSlice, setTestModeLeftSlice] = useState<string | null>(null);
   const [autoGradeReason, setAutoGradeReason] = useState<string>('');
   const [autoGradeConfidence, setAutoGradeConfidence] = useState<number>(0);
+  const [autoGradeRawOutcome, setAutoGradeRawOutcome] = useState<string>('');
 
   const fileInputRef = useRef<any>(null);
   const techInputRef = useRef<any>(null);
@@ -180,6 +181,7 @@ export function LiveAnalysis() {
     setTestModeLeftSlice(null);
     setAutoGradeReason('');
     setAutoGradeConfidence(0);
+    setAutoGradeRawOutcome('');
     setShowAutopsyModal(false);
     setMode('camera');
     setStockName('Bitcoin');
@@ -745,6 +747,7 @@ export function LiveAnalysis() {
           const confNum = Number(autoOutcomeResult?.confidence) || 0;
           setAutoGradeReason(autoOutcomeResult?.reason || '');
           setAutoGradeConfidence(confNum);
+          setAutoGradeRawOutcome(autoOutcomeResult?.rawOutcome || '');
 
           if (oc === 'UP' || oc === 'DOWN') {
             const isWin =
@@ -813,6 +816,7 @@ export function LiveAnalysis() {
       const j = await r.json();
       setAutoGradeReason(j.reason || '');
       setAutoGradeConfidence(Number(j.confidence) || 0);
+      setAutoGradeRawOutcome(j.rawOutcome || '');
       if (j.outcome === 'UP' || j.outcome === 'DOWN') {
         const isWin =
           (tradingDirection === 'UP'   && j.outcome === 'UP') ||
@@ -1526,7 +1530,7 @@ export function LiveAnalysis() {
                     </Text>
                     <Text style={tw`text-white/50 text-xs text-center mb-4 px-4`}>
                       {autoGradeReason || 'Right slice was unreadable or price was flat. Declare manually below.'}
-                      {autoGradeConfidence > 0 && ` (AI conf: ${autoGradeConfidence}%)`}
+                      {autoGradeRawOutcome && ` (Raw: ${autoGradeRawOutcome}, Conf: ${autoGradeConfidence}%)`}
                     </Text>
 
                     {/* Manual fallback buttons — same UX as live mode */}

@@ -765,19 +765,23 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
 
       const optimizedBase64 = image.replace(/^data:image\/\w+;base64,/, "");
 
-      const prompt = `This is a small cropped section of a financial candlestick chart 
-showing the rightmost portion (the "future" outcome window after a trade signal).
+      const prompt = `You are a strict financial trading grader reading a cropped chart outcome window.
+This image shows the "future" outcome window AFTER a trade signal. The trend goes from left to right.
 
-Compare where the price ENDS at the right edge versus where it STARTS at the left edge.
-- If the closing price on the right is clearly above the opening price on the left -> "UP"
-- If clearly below -> "DOWN"
-- If within ~0.1% or no candles are visible -> "FLAT"
+Compare the FIRST visible candle area (left) versus the LAST visible candle area (right).
+Ignore grid lines, watermarks, text, and UI decorations. Focus ONLY on the net direction of the candle bodies/wicks.
 
-Respond ONLY in JSON:
+- If the price is clearly HIGHER at the right side than the left side -> "UP"
+- If the price is clearly LOWER at the right side than the left side -> "DOWN"
+- If the price completely flatlines without movement or the image is 100% unreadable -> "FLAT"
+
+Note: "FLAT" should be rare. If there is a slight directional bias, give it UP or DOWN but rate the confidence appropriately.
+
+Respond ONLY in strictly valid JSON:
 {
   "outcome": "UP" | "DOWN" | "FLAT",
   "confidence": number (0-100),
-  "reason": "one short sentence citing the actual visible candle behavior"
+  "reason": "short explanation citing the visible candle behaviors"
 }`;
       
       const response = await callModel({
@@ -797,15 +801,20 @@ Respond ONLY in JSON:
       }
 
       const validOutcomes = ['UP', 'DOWN', 'FLAT'];
-      if (!validOutcomes.includes(parsed.outcome)) parsed.outcome = 'FLAT';
+      let outcome = parsed.outcome;
+      if (!validOutcomes.includes(outcome)) outcome = 'FLAT';
+      
+      // If it says FLAT but confidence is extremely low, maybe we still consider it inconclusive
+      // Lower the confidence threshold to 45 so we don't reject decent but slightly ambiguous crops
+      const confidenceNum = Number(parsed.confidence) || 0;
+      const isInconclusive = outcome === 'FLAT' || confidenceNum < 45;
 
-      // Treat low-confidence and FLAT as INCONCLUSIVE so the client can fall back to manual
-      const isInconclusive = parsed.outcome === 'FLAT' || Number(parsed.confidence) < 60;
+      console.log(`[ReadOutcome] rawOutcome=${outcome}, conf=${confidenceNum}, isInconclusive=${isInconclusive}`);
 
       return res.json({
-        outcome: isInconclusive ? 'INCONCLUSIVE' : parsed.outcome,
-        rawOutcome: parsed.outcome,
-        confidence: Number(parsed.confidence) || 0,
+        outcome: isInconclusive ? 'INCONCLUSIVE' : outcome,
+        rawOutcome: outcome,
+        confidence: confidenceNum,
         reason: parsed.reason || ''
       });
     } catch (error: any) {
