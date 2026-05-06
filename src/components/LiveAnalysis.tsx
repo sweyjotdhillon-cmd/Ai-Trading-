@@ -709,7 +709,7 @@ export function LiveAnalysis() {
         
         if (mode === 'test' && autoOutcomeResult) {
           const autoOutcomeDirection = autoOutcomeResult.outcome;
-          if (autoOutcomeDirection === 'INCONCLUSIVE') {
+          if (autoOutcomeDirection === 'INCONCLUSIVE' || !autoOutcomeDirection) {
             // Graceful fallback — do nothing, let manual buttons show
             setAnalysisStep('AUTO-READ INCONCLUSIVE — GRADE MANUALLY');
           } else {

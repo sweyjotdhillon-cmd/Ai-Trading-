@@ -102,6 +102,8 @@ import {
 
 import { BULL_PROMPT, BEAR_PROMPT, JUDGE_PROMPT, SKEPTIC_PROMPT } from "./src/constants/debatePrompts.ts";
 
+import { GoogleGenAI } from "@google/genai";
+
 async function callModel(params: {
   model: string,
   prompt: string,
@@ -111,7 +113,15 @@ async function callModel(params: {
   tokenManager: TokenManager
 }) {
   let currentApiKey = params.tokenManager.getNext();
-  if (!currentApiKey) throw new Error("GitHub Token is missing. Please add it in Settings.");
+  
+  // FALLBACK TO GEMINI if no GitHub keys are provided
+  if (!currentApiKey || typeof currentApiKey !== 'string' || currentApiKey.length < 5) {
+     if (process.env.GEMINI_API_KEY) {
+        console.warn("GitHub Token missing or invalid. Falling back to Gemini...");
+        return await callGeminiModel(params);
+     }
+     throw new Error("GitHub Token is missing. Please add it in Settings.");
+  }
 
   const baseUrl = params.userEndpoint || process.env.GITHUB_API_BASE_URL || "https://models.inference.ai.azure.com";
   // Trim trailing slash and ensure /chat/completions is present
@@ -168,7 +178,10 @@ async function callModel(params: {
       if (params.tokenManager.hasTokens()) {
          console.warn(`Rate limited (429). Switching to next system API token...`);
          currentApiKey = params.tokenManager.getNext();
-         if (!currentApiKey) throw new Error("No available GitHub tokens to rotate to.");
+         if (!currentApiKey) {
+           if (process.env.GEMINI_API_KEY) return await callGeminiModel(params);
+           throw new Error("No available GitHub tokens to rotate to.");
+         }
          // When rotating, try immediately with minimal jitter
          const jitter = 500 + Math.floor(Math.random() * 500);
          await new Promise(resolve => setTimeout(resolve, jitter));
@@ -195,10 +208,14 @@ async function callModel(params: {
         if (params.tokenManager.hasTokens() && networkRetries > 0) {
            console.warn(`Unauthorized (401). Switching to next system API token...`);
            currentApiKey = params.tokenManager.getNext();
-           if (!currentApiKey) throw new Error(`GitHub Models API Error (401): Bad credentials. The provided API key is invalid.`);
+           if (!currentApiKey) {
+             if (process.env.GEMINI_API_KEY) return await callGeminiModel(params);
+             throw new Error(`GitHub Models API Error (401): Bad credentials. The provided API key is invalid.`);
+           }
            networkRetries--;
            continue;
         }
+        if (process.env.GEMINI_API_KEY) return await callGeminiModel(params);
         throw new Error(`GitHub Models API Error (401): Bad credentials. The provided API key is invalid.`);
       }
 
@@ -239,6 +256,35 @@ async function callModel(params: {
     }
   }
   return "";
+}
+
+async function callGeminiModel(params: {
+  model: string,
+  prompt: string,
+  image?: string,
+  jsonMode?: boolean
+}): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  
+  const contents = [];
+  if (params.image) {
+     const mimeType = params.image.startsWith("data:") ? params.image.split(";")[0].split(":")[1] : "image/jpeg";
+     const base64Data = params.image.includes(",") ? params.image.split(",")[1] : params.image;
+     contents.push({ inlineData: { mimeType, data: base64Data } });
+  }
+  contents.push({ text: params.prompt });
+
+  const geminiModel = params.model.includes('mini') ? 'gemini-2.5-flash' : 'gemini-2.5-pro';
+
+  const response = await ai.models.generateContent({
+    model: geminiModel,
+    contents: contents,
+    config: {
+       responseMimeType: params.jsonMode ? "application/json" : "text/plain",
+    }
+  });
+
+  return response.text || "";
 }
 
 const VISION_EXTRACTION_PROMPT = `
@@ -744,10 +790,10 @@ Respond ONLY in JSON with this exact schema:
         parsed = { outcome: 'FLAT', confidence: 0 };
       }
 
-      if (parsed.confidence < 60 || parsed.outcome === 'FLAT') {
-         res.json({ outcome: 'INCONCLUSIVE' });
-      } else {
+      if (['UP', 'DOWN', 'FLAT'].includes(parsed.outcome)) {
          res.json({ outcome: parsed.outcome });
+      } else {
+         res.json({ outcome: 'FLAT' });
       }
     } catch (error: any) {
       console.error("Read outcome error:", error);
