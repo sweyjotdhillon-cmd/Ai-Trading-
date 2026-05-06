@@ -30,7 +30,7 @@ import tw from 'twrnc';
 import { db } from '../firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { LossAutopsyModal } from './LossAutopsyModal';
-import { parseTimeframeToMinutes, detectCandleCount, cropRightCandles } from '../utils/imageUtils';
+import { parseTimeframeToMinutes, autoDetectCandles, cropRightCandles } from '../utils/imageUtils';
 
 const JUDGE_TASKS = {
   judge1: ["Scanning support nodes...", "Evaluating volume nodes...", "Mapping price patterns...", "Analyzing breakouts...", "Finalizing Bullish Case..."],
@@ -127,7 +127,6 @@ export function LiveAnalysis() {
   const [investmentAmount, setInvestmentAmount] = useState('100');
   const [investmentDuration, setInvestmentDuration] = useState('5m');
   const [profitabilityPercent, setProfitabilityPercent] = useState('85');
-  const [candlesInView, setCandlesInView] = useState('60');
 
   // Technique Files
   const [techniquesList, setTechniquesList] = useState<string[]>([]);
@@ -530,7 +529,7 @@ export function LiveAnalysis() {
         if (mode === 'test' && Platform.OS === 'web' && optimizedImageForCrop) {
            const parseDuration = parseTimeframeToMinutes(investmentDuration);
            if (!isNaN(parseDuration)) {
-              const estimatedCandles = detectCandleCount(null, parseInt(candlesInView) || 60);
+              const estimatedCandles = await autoDetectCandles(optimizedImageForCrop);
               console.debug(`[TEST_MODE] rawDuration=${investmentDuration}, parseDuration=${parseDuration}m, detectedCandles=${estimatedCandles}, timeframe=${parseTimeframeToMinutes(graphTimeframe)}m`);
               
               try {
@@ -964,32 +963,19 @@ export function LiveAnalysis() {
                    keyboardType="numeric"
                  />
               </View>
-              {mode === 'test' && (
-                <View style={tw`flex-1 min-w-[45%]`}>
-                   <Text style={tw`text-[8px] font-black text-[#D9B382] uppercase tracking-wider mb-1.5`}>Candles View</Text>
-                   <TextInput
-                     style={tw`bg-black/60 border border-[#D9B382]/30 h-10 rounded-lg px-3 text-[#D9B382] font-black text-xs w-full`}
-                     value={candlesInView}
-                     onChangeText={setCandlesInView}
-                     keyboardType="numeric"
-                     placeholder="60"
-                     placeholderTextColor="#D9B382"
-                   />
-                </View>
-              )}
-           </View>
-        </motion.div>
+                          </View>
+         </motion.div>
 
-        {/* Dense Evidence Row */}
-        <View style={tw`bg-[#121419] rounded-2xl border border-white/10 p-4 mb-4`}>
-            <View style={tw`flex-row flex-wrap justify-between items-center gap-2 mb-3`}>
-               <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Chart Feed</Text>
-               <View style={tw`flex-row flex-wrap bg-black/40 rounded-lg p-0.5 border border-white/5`}>
-                  {(['camera', 'upload', 'test'] as const).map((m) => (
-                    <Pressable
-                      key={m}
-                      onPress={() => setMode(m)}
-                      style={({ pressed }) => [tw`px-3 py-1 rounded-md flex-row items-center`, mode === m ? tw`bg-[#D9B382]` : tw`bg-transparent`, { opacity: pressed ? 0.7 : 1 }]}
+         {/* Dense Evidence Row */}
+         <View style={tw`bg-[#121419] rounded-2xl border border-white/10 p-4 mb-4`}>
+             <View style={tw`flex-row flex-wrap justify-between items-center gap-2 mb-3`}>
+                <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Chart Feed</Text>
+                <View style={tw`flex-row flex-wrap bg-black/40 rounded-lg p-0.5 border border-white/5`}>
+                   {(['camera', 'upload', 'test'] as const).map((m) => (
+                     <Pressable
+                       key={m}
+                       onPress={() => setMode(m)}
+                       style={({ pressed }) => [tw`px-3 py-1 rounded-md flex-row items-center`, mode === m ? tw`bg-[#D9B382]` : tw`bg-transparent`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       {m === 'camera' ? <Camera size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'upload' ? <Upload size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Activity size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
                       <Text style={[tw`ml-1.5 text-[8px] font-black uppercase`, mode === m ? tw`text-[#1A1308]` : tw`text-[#4B5570]`]}>{m}</Text>

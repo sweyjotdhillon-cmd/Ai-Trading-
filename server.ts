@@ -12,7 +12,9 @@ if (!admin.apps.length) {
   try {
     const config = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'firebase-applet-config.json'), 'utf-8'));
     if (config.projectId) projectId = config.projectId;
-  } catch(e) {}
+  } catch (e: any) {
+    if (e.code !== 'ENOENT') console.warn('Could not read firebase config', e);
+  }
   admin.initializeApp({ projectId });
 }
 

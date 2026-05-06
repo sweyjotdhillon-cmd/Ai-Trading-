@@ -80,9 +80,70 @@ export function parseTimeframeToMinutes(timeframeStr: string): number {
   return num; // default to minutes
 }
 
-export function detectCandleCount(imageElement: HTMLImageElement | null, defaultCount: number = 60): number {
-  if (!imageElement) return defaultCount;
-  return defaultCount;
+export function autoDetectCandles(imageSource: string): Promise<number> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const width = img.width;
+      const height = img.height;
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return resolve(80); // Default fallback
+
+      ctx.drawImage(img, 0, 0, width, height);
+      const imageData = ctx.getImageData(0, 0, width, height).data;
+
+      const colIntensities = new Array(width).fill(0);
+      
+      // Calculate vertical intensity to find peaks (candles)
+      for (let x = 0; x < width; x++) {
+        let colSum = 0;
+        for (let y = 0; y < height; y++) {
+          const idx = (y * width + x) * 4;
+          const r = imageData[idx];
+          const g = imageData[idx+1];
+          const b = imageData[idx+2];
+          // Simple grayscale conversion
+          colSum += (r + g + b) / 3;
+        }
+        colIntensities[x] = colSum / height;
+      }
+
+      // Smooth the column data
+      const smoothed = new Array(width).fill(0);
+      for (let x = 2; x < width - 2; x++) {
+         smoothed[x] = (colIntensities[x-2] + colIntensities[x-1] + colIntensities[x] + colIntensities[x+1] + colIntensities[x+2]) / 5;
+      }
+
+      let peaks = 0;
+      let trend = 0; 
+      
+      for (let x = 3; x < width - 2; x++) {
+         const diff = smoothed[x] - smoothed[x-1];
+         // A difference threshold to filter minor noise
+         if (diff > 1.5) {
+            trend = 1;
+         } else if (diff < -1.5) {
+            if (trend === 1) peaks++;
+            trend = -1;
+         }
+      }
+
+      console.log('[AutoDetectCandles] Parsed peaks:', peaks);
+      
+      if (peaks > 15 && peaks < 400) {
+        resolve(peaks);
+      } else {
+        // Fallback to width estimation if algorithm flatlines or goes crazy
+        resolve(Math.max(30, Math.floor(width / 12)));
+      }
+    };
+    img.onerror = () => resolve(80);
+    img.src = imageSource;
+  });
 }
 
 export function cropRightCandles(
