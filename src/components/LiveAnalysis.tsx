@@ -403,6 +403,55 @@ export function LiveAnalysis() {
     }
   };
 
+  const saveToStats = (analysisData: any, outcome: 'WIN' | 'LOSS') => {
+    try {
+      const entryIdx = statsData.length + 1;
+      const profitPct = Number(profitabilityPercent);
+      const investAmt = Number(investmentAmount);
+      const potentialProfit = (profitPct / 100) * investAmt;
+      const now = new Date();
+
+      const newEntry = {
+        id: entryIdx,
+        sessionName: `${stockName.replace('/', '_')}_${entryIdx}`,
+        sessionIndex: sessionIndex,
+        timestamp: now.toISOString(),
+        date: now.toLocaleDateString(),
+        time: now.toLocaleTimeString(),
+        stock: stockName,
+        timeframe: graphTimeframe,
+        duration: investmentDuration,
+        investment: investAmt,
+        profitPercentage: profitPct,
+        profitPotential: potentialProfit,
+        lossPotential: investAmt,
+        signal: analysisData.judge.winner === 'BULL' ? 'CALL' : 
+                (analysisData.judge.winner === 'BEAR' ? 'PUT' : 'WAIT'),
+        result: outcome,
+        exactProfit: outcome === 'WIN' ? potentialProfit : -investAmt,
+        profitAmount: outcome === 'WIN' ? potentialProfit : -investAmt,
+        reasoning: analysisData.judge.ruling,
+        confidence: analysisData.judge.finalConfidence,
+        totalScore: analysisData.judge.totalScore,
+        decision: analysisData.judge.decision,
+        techniquesApplied: techniquesList,
+        isAutoGraded: mode === 'test'
+      };
+
+      const updatedStats = [...statsData, newEntry];
+      setStatsData(updatedStats);
+      setConfirmedOutcome(outcome);
+
+      const existing = sessionStorage.getItem('stats_surface_data');
+      let localStats = { stats: [] };
+      if (existing) localStats = JSON.parse(existing);
+      localStats.stats.push(newEntry as never);
+      sessionStorage.setItem('stats_surface_data', JSON.stringify(localStats));
+    } catch (err) {
+      console.error("Failed to save stats:", err);
+    }
+  };
+
   const handleAnalyze = async () => {
     if (loading || isBusy) return;
     setIsBusy(true);
@@ -656,26 +705,27 @@ export function LiveAnalysis() {
              setAnalysisStep(finalConfidence < 70 ? `LOW CONFIDENCE (${finalConfidence}%) - ABORTED` : 'SIGNAL ABORTED');
           } else {
              setAnalysisStep('SIGNAL CONFIRMED - EXECUTE NOW!');
-             
-             if (mode === 'test' && autoOutcomeResult) {
-                const autoOutcomeDirection = autoOutcomeResult.outcome;
-                if (autoOutcomeDirection === 'INCONCLUSIVE') {
-                    // Do not auto-grade, allow the user to select
-                    setTimeout(() => {
-                       // Replace with custom UI or alert
-                       setAnalysisError("Auto-verify uncertain — please grade manually.");
-                    }, 500);
-                } else {
-                    const isWin = (direction === 'UP' && autoOutcomeDirection === 'UP') || (direction === 'DOWN' && autoOutcomeDirection === 'DOWN');
-                    setTimeout(() => {
-                        setConfirmedOutcome(isWin ? 'WIN' : 'LOSS');
-                        setAnalysisError(`Auto-Test Complete! AI Signal: ${direction} | Actual: ${autoOutcomeDirection} | Result: ${isWin ? 'WIN' : 'LOSS'}`);
-                    }, 1000);
-                }
-             }
           }
         }
         
+        if (mode === 'test' && autoOutcomeResult) {
+          const autoOutcomeDirection = autoOutcomeResult.outcome;
+          if (autoOutcomeDirection === 'INCONCLUSIVE') {
+            // Graceful fallback — do nothing, let manual buttons show
+            setAnalysisStep('AUTO-READ INCONCLUSIVE — GRADE MANUALLY');
+          } else {
+            const isWin = 
+              (direction === 'UP' && autoOutcomeDirection === 'UP') || 
+              (direction === 'DOWN' && autoOutcomeDirection === 'DOWN');
+            setTimeout(() => {
+              saveToStats(data, isWin ? 'WIN' : 'LOSS');
+              setAnalysisStep(
+                `AUTO-GRADED: Signal=${direction} | Market=${autoOutcomeDirection} | ${isWin ? '✅ WIN' : '❌ LOSS'}`
+              );
+            }, 1000);
+          }
+        }
+
         setAnalysis(data);
         
         // Return phase back to idle after display, but keep scout running until reset 
@@ -798,10 +848,10 @@ export function LiveAnalysis() {
       
       <View style={tw`p-4`}>
         {/* Compact Terminal Header */}
-        <View style={tw`flex-row justify-between items-end mb-4 px-1`}>
+        <View style={tw`flex-row justify-between items-end mb-4 px-1 mt-12`}>
           <View>
             <Text style={tw`text-[#D9B382] text-[8px] font-black tracking-[3px] uppercase`}>Pro Terminal v2</Text>
-            <Text style={tw`text-white text-2xl font-black`}>CONSOLE</Text>
+            <Text style={tw`text-white text-2xl font-black`}>DASHBOARD</Text>
           </View>
           <View style={tw`flex-row gap-2`}>
             <Pressable 
@@ -1332,52 +1382,109 @@ export function LiveAnalysis() {
             </View>
 
             {/* Manual Trade Result Declaration */}
-            <View style={tw`mt-4 bg-black/40 rounded-2xl p-6 border border-[#D9B382]/30 shadow-lg`}>
+            {mode !== 'test' && (
+              <View style={tw`mt-4 bg-black/40 rounded-2xl p-6 border border-[#D9B382]/30 shadow-lg`}>
+                  <Text style={tw`text-[#D9B382] font-black uppercase tracking-[2px] text-xs mb-4 text-center`}>
+                      {confirmedOutcome ? 'TRADE RESULT FINALIZED' : 'DECLARE TRADE OUTCOME'}
+                  </Text>
+                  
+                  {!confirmedOutcome ? (
+                    <View style={tw`flex-row flex-wrap gap-4`}>
+                      <Pressable 
+                        onPress={() => saveToStats(analysis, 'WIN')}
+                        style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
+                      >
+                        <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                          <CheckCircle size={18} color="white" style={tw`mr-2`} />
+                          <Text style={tw`text-white font-black uppercase text-sm`}>WIN (PROFIT)</Text>
+                        </motion.div>
+                      </Pressable>
+                      
+                      <Pressable 
+                        onPress={() => saveToStats(analysis, 'LOSS')}
+                        style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
+                      >
+                        <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                          <XCircle size={18} color="white" style={tw`mr-2`} />
+                          <Text style={tw`text-white font-black uppercase text-sm`}>LOSS</Text>
+                        </motion.div>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <View style={tw`items-center`}>
+                      <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-4 flex-row items-center border border-white/20 shadow-xl`}>
+                        {confirmedOutcome === 'WIN' ? <CheckCircle size={24} color="white" style={tw`mr-3`} /> : <XCircle size={24} color="white" style={tw`mr-3`} />}
+                        <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>{confirmedOutcome}</Text>
+                      </View>
+                      
+                      {confirmedOutcome === 'LOSS' && (
+                        <Pressable 
+                          onPress={() => setShowAutopsyModal(true)}
+                          style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-4`, { opacity: pressed ? 0.7 : 1 }]}
+                        >
+                          <AlertTriangle size={16} color="white" style={tw`mr-2`} />
+                          <Text style={tw`text-white font-black uppercase text-xs tracking-[1px]`}>RUN LOSS AUTOPSY</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  )}
+              </View>
+            )}
+
+            {mode === 'test' && (
+              <View style={tw`mt-4 bg-black/40 rounded-2xl p-6 border border-[#D9B382]/30 shadow-lg`}>
                 <Text style={tw`text-[#D9B382] font-black uppercase tracking-[2px] text-xs mb-4 text-center`}>
-                    {confirmedOutcome ? 'TRADE RESULT FINALIZED' : 'DECLARE TRADE OUTCOME'}
+                  AUTO-TEST RESULT
                 </Text>
-                
                 {!confirmedOutcome ? (
+                  // Still loading or INCONCLUSIVE — show manual buttons as fallback
                   <View style={tw`flex-row flex-wrap gap-4`}>
                     <Pressable 
-                      onPress={() => setConfirmedOutcome('WIN')}
+                      onPress={() => saveToStats(analysis, 'WIN')}
                       style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                     >
-                      <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                        <CheckCircle size={18} color="white" style={tw`mr-2`} />
-                        <Text style={tw`text-white font-black uppercase text-sm`}>WIN (PROFIT)</Text>
-                      </motion.div>
+                      <CheckCircle size={18} color="white" style={tw`mr-2`} />
+                      <Text style={tw`text-white font-black uppercase text-sm`}>WIN (MANUAL)</Text>
                     </Pressable>
-                    
                     <Pressable 
-                      onPress={() => setConfirmedOutcome('LOSS')}
+                      onPress={() => saveToStats(analysis, 'LOSS')}
                       style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                     >
-                      <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                        <XCircle size={18} color="white" style={tw`mr-2`} />
-                        <Text style={tw`text-white font-black uppercase text-sm`}>LOSS</Text>
-                      </motion.div>
+                      <XCircle size={18} color="white" style={tw`mr-2`} />
+                      <Text style={tw`text-white font-black uppercase text-sm`}>LOSS (MANUAL)</Text>
                     </Pressable>
                   </View>
                 ) : (
                   <View style={tw`items-center`}>
-                    <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-4 flex-row items-center border border-white/20 shadow-xl`}>
-                      {confirmedOutcome === 'WIN' ? <CheckCircle size={24} color="white" style={tw`mr-3`} /> : <XCircle size={24} color="white" style={tw`mr-3`} />}
-                      <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>{confirmedOutcome}</Text>
+                    <View style={tw`flex-row items-center mb-2`}>
+                      <Zap size={14} color="#D9B382" style={tw`mr-2`} />
+                      <Text style={tw`text-[#D9B382] text-[10px] font-black uppercase tracking-widest`}>
+                        AUTO-GRADED
+                      </Text>
                     </View>
-                    
+                    <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-4 flex-row items-center border border-white/20 shadow-xl`}>
+                      {confirmedOutcome === 'WIN' 
+                        ? <CheckCircle size={24} color="white" style={tw`mr-3`} /> 
+                        : <XCircle size={24} color="white" style={tw`mr-3`} />}
+                      <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>
+                        {confirmedOutcome}
+                      </Text>
+                    </View>
                     {confirmedOutcome === 'LOSS' && (
                       <Pressable 
                         onPress={() => setShowAutopsyModal(true)}
                         style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-4`, { opacity: pressed ? 0.7 : 1 }]}
                       >
                         <AlertTriangle size={16} color="white" style={tw`mr-2`} />
-                        <Text style={tw`text-white font-black uppercase text-xs tracking-[1px]`}>RUN LOSS AUTOPSY</Text>
+                        <Text style={tw`text-white font-black uppercase text-xs tracking-[1px]`}>
+                          RUN LOSS AUTOPSY
+                        </Text>
                       </Pressable>
                     )}
                   </View>
                 )}
-            </View>
+              </View>
+            )}
 
             <Pressable 
               onPress={handleReset}

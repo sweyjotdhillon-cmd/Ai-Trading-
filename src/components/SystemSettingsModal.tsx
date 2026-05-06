@@ -32,8 +32,8 @@ export function SystemSettingsModal({ show, onClose }: Props) {
   const [systemTokenCount, setSystemTokenCount] = useState<number>(0);
 
   useEffect(() => {
-    // We get real count directly from Firestore without needing an API key if it's stored there.
     if (show) {
+      // We get real count directly from Firestore without needing an API key if it's stored there.
       getDoc(doc(db, 'settings', 'system')).then(snap => {
         if (snap.exists()) {
           const data = snap.data();
@@ -90,10 +90,11 @@ export function SystemSettingsModal({ show, onClose }: Props) {
         setAdminTokenStatus('saved');
         setTimeout(() => setAdminTokenStatus('idle'), 2000);
       } else {
-        setAdminTokenStatus('idle');
+        throw new Error('Server did not return encrypted payload');
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn("Could not save admin tokens:", e);
+      alert("Failed to save tokens: " + e.message);
       setAdminTokenStatus('idle');
     }
   };
@@ -160,7 +161,8 @@ export function SystemSettingsModal({ show, onClose }: Props) {
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="w-full max-w-md bg-[#14161C] border border-white/10 rounded-2xl shadow-2xl overflow-hidden relative z-10"
+              className="w-full max-w-md bg-[#14161C] border border-white/10 rounded-2xl shadow-2xl overflow-hidden relative z-10 flex flex-col"
+              style={{ maxHeight: '85%' }}
             >
               <View style={tw`flex-row items-center justify-between p-4 border-b border-white/5`}>
                 <View style={tw`flex-row items-center`}>
@@ -175,7 +177,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                 </Pressable>
               </View>
               
-              <ScrollView style={tw`p-6`} contentContainerStyle={tw`pb-20`}>
+              <ScrollView style={tw`flex-1 p-6`} contentContainerStyle={tw`pb-20`}>
                 <View style={tw`mb-8`}>
                   <Text style={tw`text-sm font-semibold text-[#8B95B0] uppercase tracking-wider mb-4`}>
                     Share Application
@@ -236,7 +238,6 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                   </View>
     
 
-
                   {isAdmin && (
                     <View style={tw`mt-8 mb-4`}>
                       <View style={tw`flex-row items-center gap-2 mb-4`}>
@@ -254,7 +255,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                         {adminTokens.map((token, index) => (
                           <View key={index} style={tw`flex-row items-center gap-2 mb-2 p-3 bg-white/5 rounded-lg border border-white/10`}>
                             <Text style={tw`flex-1 text-white text-xs`}>
-                              {token.substring(0, 8)}...{token.substring(token.length - 4)}
+                              {token}
                             </Text>
                             <Pressable 
                               onPress={() => removeAdminToken(index)}

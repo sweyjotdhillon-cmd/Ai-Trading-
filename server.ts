@@ -4,10 +4,16 @@ import cors from "cors";
 import crypto from "crypto";
 import admin from "firebase-admin";
 
+import fs from 'fs';
+
 // --- Firebase Admin init (verifies real ID tokens server-side) ---
 if (!admin.apps.length) {
-  // Using default credential, might need service account depending on env
-  admin.initializeApp();
+  let projectId = 'gen-lang-client-0935111175';
+  try {
+    const config = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'firebase-applet-config.json'), 'utf-8'));
+    if (config.projectId) projectId = config.projectId;
+  } catch(e) {}
+  admin.initializeApp({ projectId });
 }
 
 const ADMIN_EMAILS = new Set(['kveerpal681@gmail.com', 'aitradinggemini@gmail.com']);
@@ -98,12 +104,11 @@ async function callModel(params: {
   model: string,
   prompt: string,
   image?: string,
-  userApiKey?: string,
   userEndpoint?: string,
   jsonMode?: boolean,
   tokenManager: TokenManager
 }) {
-  let currentApiKey = params.userApiKey || params.tokenManager.getNext();
+  let currentApiKey = params.tokenManager.getNext();
   if (!currentApiKey) throw new Error("GitHub Token is missing. Please add it in Settings.");
 
   const baseUrl = params.userEndpoint || process.env.GITHUB_API_BASE_URL || "https://models.inference.ai.azure.com";
@@ -157,8 +162,8 @@ async function callModel(params: {
         throw new Error(`GitHub Models API Rate Limit Exceeded (429) after all retries. Please wait 30+ seconds.`);
       }
       
-      // If we don't have a user API key and there are multiple system tokens, cycle the token
-      if (!params.userApiKey && params.tokenManager.hasTokens()) {
+      // If there are multiple system tokens, cycle the token
+      if (params.tokenManager.hasTokens()) {
          console.warn(`Rate limited (429). Switching to next system API token...`);
          currentApiKey = params.tokenManager.getNext();
          if (!currentApiKey) throw new Error("No available GitHub tokens to rotate to.");
@@ -183,7 +188,19 @@ async function callModel(params: {
       const msg = errorJson?.error?.message || errorJson?.error || errText || response.statusText;
       console.error(`GitHub API Error (${response.status}):`, msg);
       
-      // If it's a 4xx error (other than 429), don't retry as it's likely a permanent error (e.g. bad prompt/image)
+      // Handle 401 Unauthorized by cycling tokens if possible
+      if (response.status === 401) {
+        if (params.tokenManager.hasTokens() && networkRetries > 0) {
+           console.warn(`Unauthorized (401). Switching to next system API token...`);
+           currentApiKey = params.tokenManager.getNext();
+           if (!currentApiKey) throw new Error(`GitHub Models API Error (401): Bad credentials. The provided API key is invalid.`);
+           networkRetries--;
+           continue;
+        }
+        throw new Error(`GitHub Models API Error (401): Bad credentials. The provided API key is invalid.`);
+      }
+
+      // If it's a 4xx error (other than 429 or handled 401), don't retry as it's likely a permanent error (e.g. bad prompt/image)
       if (response.status >= 400 && response.status < 500) {
         throw new Error(`GitHub Models API Error: ${msg}`);
       }

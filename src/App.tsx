@@ -10,7 +10,7 @@ import {
   StatusBar,
   Platform
 } from 'react-native';
-import { Settings, LogIn, Activity, LayoutGrid } from 'lucide-react';
+import { Settings, LogIn, Activity } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'motion/react';
 
 import { LiveAnalysis } from './components/LiveAnalysis';
@@ -258,27 +258,6 @@ function App() {
         </LayoutGroup>
       </View>
 
-      {/* Modern Android Bottom Bar */}
-      <View style={styles.bottomBar}>
-        <Pressable 
-          style={({ pressed }) => [styles.bottomBarItem, { opacity: pressed ? 0.7 : 1 }]} 
-          onPress={() => setTimeout(() => { setHeroDismissed(true); }, 10)}
-        >
-          <motion.div
-            whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
-            whileTap={prefersReducedMotion ? {} : { scale: 0.96 }}
-            animate={{ scale: prefersReducedMotion ? 1 : 1.08 }}
-            transition={springProps}
-            style={{ display: 'contents' }}
-          >
-            <View style={[styles.bottomBarIcon, styles.bottomBarIconActive]}>
-              <LayoutGrid color={'#1A1308'} size={22} />
-            </View>
-          </motion.div>
-          <Text style={[styles.bottomBarText, styles.bottomBarTextActive]}>Console</Text>
-        </Pressable>
-      </View>
-
       <SystemSettingsModal 
         show={showSystemSettings} 
         onClose={() => setShowSystemSettings(false)} 
@@ -356,15 +335,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   header: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 44 : 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
     height: 64,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    backgroundColor: '#0A0B0F',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-    marginTop: Platform.OS === 'ios' ? 44 : 0,
+    backgroundColor: 'transparent',
+    borderBottomWidth: 0,
   },
   headerLeft: {
     flexDirection: 'row',
